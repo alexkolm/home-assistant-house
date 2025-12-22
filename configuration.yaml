@@ -1,0 +1,171 @@
+# Loads default set of integrations. Do not remove.
+default_config:
+
+# Load frontend themes from the themes folder
+frontend:
+  themes: !include_dir_merge_named themes
+
+openhasp: !include openhasp.yaml
+
+group:
+  family:
+    name: Owners
+    entities:
+      - device_tracker.alex
+      - device_tracker.tanya
+
+camera:
+  - platform: ffmpeg
+    name: domofon_audio
+    input: !secret domofon_rtsp_url
+
+shell_command:
+  record_domofon_video: !secret domofon_record_cmd
+  delete_domofon_video: rm -f /config/www/domofon.mp4
+
+input_boolean:
+  notify_door:
+    name: Уведомления от входной двери
+    icon: mdi:door
+  notify_boiler:
+    name: Запуск отопления по температуре
+    icon: mdi:home-thermometer
+  notify_count:
+    name: Показания счетчиков переданы
+    icon: mdi:counter
+  test_gate_open:
+    name: Тестовая кнопка замка
+    icon: mdi:lock-open-variant
+  heating_relay_virtual:
+    name: Реле отопления
+    icon: mdi:fire
+  climate_daily:
+    name: Режимы термостата по графику
+    icon: mdi:timer-refresh
+
+input_number:
+  boiler_starts_last_hour:
+    name: Boiler starts last hour
+    min: 0
+    max: 100
+    step: 1
+  boiler_starts_previous_hour:
+    name: Такты горелки за предыдущий час
+    min: 0
+    max: 100
+    step: 1
+
+template:
+  - switch:
+      - name: "Virtual Heating Relay"
+        unique_id: virtual_heating_relay
+        icon: mdi:fire
+        state: "{{ is_state('input_boolean.heating_relay_virtual', 'on') }}"
+        turn_on:
+          - service: input_boolean.turn_on
+            target:
+              entity_id: input_boolean.heating_relay_virtual
+        turn_off:
+          - service: input_boolean.turn_off
+            target:
+              entity_id: input_boolean.heating_relay_virtual
+  - sensor:
+      - name: "Energy Total"
+        unique_id: "energy_total"
+        unit_of_measurement: "kWh"
+        device_class: "energy"
+        state_class: "total_increasing"
+        state: >
+          {% set val = states('sensor.energy_relay_energy') | float(0) %}
+          {% if val > 0 %}
+            {{ (val + 19348.7) | round(1) }}
+          {% else %}
+            unknown
+          {% endif %}
+
+      - name: "Livingroom Thermostat Target"
+        unique_id: livingroom_thermostat_target
+        unit_of_measurement: "°C"
+        state: "{{ state_attr('climate.livingroom_thermostat', 'temperature') }}"      
+        
+      - name: "next_sunrise"
+        state: >
+          {{ as_timestamp(state_attr('sun.sun', 'next_rising')) | timestamp_custom('%H:%M') }}
+        unique_id: "next_sunrise"
+        
+      - name: "next_sunset"
+        state: >
+          {{ as_timestamp(state_attr('sun.sun', 'next_setting')) | timestamp_custom('%H:%M') }}
+        unique_id: "next_sunset"
+
+mqtt:
+  sensor:
+    - name: "Water Consumption Cubic Meters"
+      state_topic: "zigbee2mqtt_poe/impulse_counter"
+      value_template: "{{ ((value_json.l3 | int * 10 / 1000) + 20.33) | round(2) }}"
+      unit_of_measurement: "m³"
+      device_class: "water"
+
+utility_meter:
+  daily_energy_main:
+    source: sensor.energy_relay_energy
+    cycle: daily
+  daily_energy_boiler:
+    source: sensor.boiler_relay_energy
+    cycle: daily
+  daily_water:
+    source: sensor.water_consumption_cubic_meters
+    cycle: daily
+
+tts:
+  - platform: google_translate
+
+notify:
+  - name: me
+    platform: telegram
+    chat_id: !secret telegram_chat_id
+
+lovelace:
+  mode: yaml
+  resources:
+    - url: /local/community/button-card/button-card.js
+      type: module
+    - url: /local/community/webrtc-camera/webrtc-camera.js
+      type: module
+      
+sensor:
+
+  - platform: time_date
+    display_options:
+      - 'time'
+      - 'date'
+      - 'date_time'
+
+#  - platform: template
+#    sensors:
+#      # Sunset
+#      next_sunrise:
+#        value_template: "{{ as_timestamp(state_attr('sun.sun', 'next_rising')) | timestamp_custom('%H:%M') }}"
+#      # Sunrise
+#      next_sunset:
+#        value_template: "{{ as_timestamp(state_attr('sun.sun', 'next_setting')) | timestamp_custom('%H:%M') }}"
+
+  - platform: statistics
+    name: Yard temperature min 24h
+    entity_id: sensor.yard_sensor_temperature
+    state_characteristic: value_min
+    sampling_size: 500
+    max_age:
+      hours: 24
+
+  - platform: statistics
+    name: Yard temperature max 24h
+    entity_id: sensor.yard_sensor_temperature
+    state_characteristic: value_max
+    sampling_size: 500
+    max_age:
+      hours: 24
+
+automation: !include automations.yaml
+script: !include scripts.yaml
+scene: !include scenes.yaml

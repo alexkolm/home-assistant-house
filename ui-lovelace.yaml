@@ -1,0 +1,480 @@
+title: Дом в Шадринске
+views:
+- title: Сервер HA
+  id: server
+  icon: mdi:raspberry-pi
+  cards:
+    - type: entities
+      show_header_toggle: false     
+      entities:
+      - entity: input_boolean.notify_door
+      - entity: input_boolean.notify_boiler
+      - entity: input_boolean.notify_count
+      - entity: input_boolean.test_gate_open
+      title: Управление домом
+      
+    - type: entities
+      show_header_toggle: false     
+      entities:
+      - entity: sensor.processor_use
+        name: Загрузка CPU
+      - entity: sensor.memory_use_percent
+        name: Загрузка RAM
+      - entity: sensor.disk_use_percent
+        name: Заполненность HDD
+      - entity: sensor.last_boot
+        name: Последняя перезагрузка
+      - entity: sensor.date
+        name: Дата
+      - entity: sensor.time
+        name: Время
+      title: Сервер в Шадринске
+
+    - type: entities
+      entities:
+      - entity: binary_sensor.videoreg_ping
+        name: Видеосервер (192.168.0.150)
+      - entity: binary_sensor.domofon_ping
+        name: Домофон (192.168.0.200)
+      - entity: binary_sensor.openhasp_panel
+        name: OpenHASP панель (192.168.0.120)
+      - entity: binary_sensor.gas_ping
+        name: SmartTherm (192.168.0.212)
+      - entity: binary_sensor.192_168_0_50
+        name: ZigBee роутер (192.168.0.50)
+      title: Устройства в сети
+
+    - type: entities
+      entities:
+      - entity: device_tracker.alex
+        name: Телефон хозяина
+      - entity: device_tracker.tanya
+        name: Телефон хозяйки
+      - entity: group.family  
+        name: Присутствие хозяев
+        card: glance
+      title: Люди      
+
+    - type: entities
+      entities:
+      - entity: sensor.local_ip
+        name: IP-адрес
+      - entity: sensor.speedtest_download
+        name: Download
+      - entity: sensor.speedtest_ping
+        name: Ping
+        icon: mdi:call-missed
+      - entity: sensor.speedtest_upload
+        name: Upload
+      title: Интернет
+
+- title: Дом
+  id: main
+  icon: mdi:floor-plan
+  cards:
+    - type: entities
+      show_header_toggle: false
+      entities:
+      - entity: sensor.livingroom_sensor_temperature
+        name: Температура
+      - entity: sensor.livingroom_sensor_humidity
+        name: Влажность
+      - entity: switch.livingroom_relay
+        name: Люстра
+        icon: mdi:ceiling-light-outline
+      - entity: binary_sensor.datchik_zadymleniia_v_dome_smoke
+        name: Датчик дыма
+      - entity: binary_sensor.back_door_contact
+        name: Задняя дверь
+        icon: 'mdi:door'   
+      - entity: light.torsher_lamp
+        name: Торшер
+        icon: mdi:floor-lamp-torchiere-outline
+      - entity: switch.boiler_relay
+        name: "Электрокотел"
+        icon: mdi:radiator
+      - entity: sensor.boiler_relay_power
+        name: Мощность
+      - entity: switch.pump_plug
+        name: Насос электрокотла
+        icon: mdi:pump
+      - entity: sensor.pump_plug_power
+        name: Мощность
+      - entity: sensor.pogreb_sensor_temperature
+        name: Температура в погребе
+      - entity: sensor.pogreb_sensor_humidity
+        name: Влажность в погребе
+      title: Гостиная
+
+    - type: entities
+      show_header_toggle: false
+      entities:
+      - entity: switch.freezer_plug
+        name: Холодильник
+        icon: mdi:fridge-outline
+      - entity: switch.kitchen_led_relay
+        name: Подсветка раковины
+        icon: mdi:led-strip
+      - entity: binary_sensor.gas_sensor
+        name: Утечка газа
+      - entity: sensor.gas_sensor
+        name: Уровень загазованности
+      - entity: binary_sensor.leak_kitchen_water_leak
+        name: Протечка в кухне
+      - entity: switch.gas_usb
+        name: USB-розетка газ. котла
+        icon: mdi:usb-port
+      title: Кухня
+      
+    - type: entities
+      show_header_toggle: false     
+      entities:
+      - entity: sensor.bedroom_sensor_temperature
+        name: Температура
+      - entity: sensor.bedroom_sensor_humidity
+        name: Влажность
+      - entity: switch.videoreg_plug
+        name: Видеорегистратор
+        icon: mdi:video-box
+      - entity: sensor.podval_sensor_temperature
+        name: Температура под спальней
+      - entity: sensor.podval_sensor_humidity
+        name: Влажность в подвале
+      title: Спальня
+ 
+    - type: entities
+      show_header_toggle: false     
+      entities:
+      - entity: binary_sensor.motion_sensor_occupancy
+        name: Движение
+      - entity: binary_sensor.front_door_contact
+        name: Парадная дверь
+        icon: 'mdi:door'    
+      - entity: switch.ipcam_plug
+        name: IP-камера кошки
+        icon: mdi:webcam
+      title: Коридор        
+      
+    - type: entities
+      show_header_toggle: false     
+      entities:
+      - entity: switch.airvent_relay
+        name: Вентилятор вытяжки
+        icon: mdi:hvac
+      - entity: binary_sensor.human_sensor_bathroom_presence
+        name: Сенсор присутствия
+        icon: mdi:motion-sensor  
+      title: Душевая
+
+- title: Погода
+  id: main
+  icon: mdi:weather-partly-cloudy
+  cards:
+    - type: vertical-stack
+      cards:
+        - type: weather-forecast
+          entity: weather.forecast_house_lenina
+          show_forecast: true
+          name: Шадринск
+
+        - type: entities
+          show_header_toggle: false
+          entities:
+            - entity: sensor.yard_sensor_temperature
+              name: Температура
+            - entity: sensor.yard_temperature_min_24h
+              name: Минимум за сутки
+              icon: mdi:thermometer-minus
+            - entity: sensor.yard_temperature_max_24h
+              name: Максимум за сутки
+              icon: mdi:thermometer-plus
+            - entity: sensor.yard_sensor_humidity
+              name: Влажность
+          title: Двор
+
+        - type: entities
+          show_header_toggle: false
+          entities:
+            - entity: sensor.next_sunrise
+              name: Следующий рассвет
+              icon: mdi:weather-sunset-up
+            - entity: sensor.next_sunset
+              name: Следующий закат
+              icon: mdi:weather-sunset-down
+          title: Солнце
+
+        - type: history-graph
+          title: "Атмосферное давление за последние 96 часов"
+          hours_to_show: 96
+          entities:
+            - sensor.yard_sensor_pressure
+            - entity: sensor.yard_sensor_pressure
+              name: "Давление (двор.), hPa"
+            - sensor.podval_sensor_pressure
+            - entity: sensor.podval_sensor_pressure
+              name: "Давление (подв.), hPa"
+
+        - type: history-graph
+          title: "Температура в доме за последние 96 часов"
+          hours_to_show: 96
+          entities:
+            - entity: sensor.bedroom_sensor_temperature
+              name: "Спальня"
+              color: blue
+            - entity: sensor.livingroom_sensor_temperature
+              name: "Гостиная"
+              color: yellow
+            - entity: sensor.livingroom_thermostat_target
+              name: "Целевая"
+              color: red
+
+        - type: history-graph
+          title: "Влажность в доме за последние 96 часов"
+          hours_to_show: 96
+          entities:
+            - sensor.bedroom_sensor_humidity
+            - entity: sensor.bedroom_sensor_humidity
+              name: Спальня
+            - sensor.livingroom_sensor_humidity
+            - entity: sensor.livingroom_sensor_humidity
+              name: Гостиная
+
+        - type: history-graph
+          title: "Температура вне дома за последние 96 часов"
+          hours_to_show: 96
+          entities:
+            - sensor.podval_sensor_temperature
+            - entity: sensor.podval_sensor_temperature
+              name: Подвал
+            - sensor.yard_sensor_temperature
+            - entity: sensor.yard_sensor_temperature
+              name: Двор
+            - sensor.pogreb_sensor_temperature
+            - entity: sensor.pogreb_sensor_temperature
+              name: Погреб
+
+- title: Учет ресурсов
+  id: counters
+  icon: mdi:counter
+  cards:
+    - type: vertical-stack
+      cards:
+        - type: entities
+          show_header_toggle: false     
+          entities:
+            - entity: sensor.daily_energy_main
+              name: Потреблено энергии с начала суток
+              icon: mdi:lightning-bolt  
+            - entity: sensor.energy_total
+              name: Показания счетчика на вводе в дом
+              icon: mdi:counter                
+            - entity: sensor.daily_water
+              name: Израсходовано воды с начала суток
+              icon: mdi:water-pump  
+            - entity: sensor.water_consumption_cubic_meters
+              name: Показания водомера на вводе в дом
+              icon: mdi:counter 
+          title: Потребление ресурсов
+
+        - type: history-graph  
+          title: "Энергопотребление в доме за 4 суток"
+          hours_to_show: 96
+          entities:
+            - sensor.daily_energy_main
+
+        - type: history-graph  
+          title: "Потребление воды в доме за 4 суток"
+          hours_to_show: 96
+          entities:
+            - sensor.daily_water
+
+        - type: history-graph  
+          title: "Напряжение в доме за 96 часов"
+          hours_to_show: 96
+          entities:
+            - sensor.energy_relay_voltage
+
+        - type: history-graph  
+          title: "Энергопотребление дома за последние сутки"
+          hours_to_show: 24
+          entities:
+            - entity: sensor.energy_relay_power
+              name: Дом 
+            - entity: sensor.boiler_plug_power
+              name: Водонагреватель  
+            - entity: sensor.freezer_plug_power
+              name: Холодильник  
+            - entity: sensor.boiler_relay_power
+              name: "Электрокотел"
+
+- title: Домофон
+  id: domofon
+  icon: mdi:doorbell-video
+  cards:
+  - type: vertical-stack
+    cards:
+          # Видеопоток домофона
+#    - type: picture-entity
+#      entity: camera.domofon_video
+#      camera_view: live
+#      show_name: false
+#      show_state: false
+
+      # Аудиопоток домофона через WebRTC
+    - type: custom:webrtc-camera
+      url: "rtsp://localhost:8554/domofon_audio"
+      muted: false
+      ui: true
+      talk: true
+      
+          # Кнопки управления (вместо horizontal-stack используем grid)
+    - type: grid
+      columns: 3  # Три кнопки в ряд
+      square: false
+      cards:
+          # Кнопка открытия двери
+      - type: custom:button-card
+        entity: switch.domofon_door_relay_0
+        name: ОТКРЫТЬ ДВЕРЬ
+        icon: mdi:lock-open-variant
+        tap_action:
+          action: call-service
+          service: switch.turn_on
+          target:
+            entity_id: switch.domofon_door_relay_0
+        styles:
+          card:
+            - height: 80px
+            - border-radius: 10px
+            - background-color: rgba(0, 128, 255, 0.8)
+            - color: white
+            - font-size: 18px
+            - font-weight: bold
+            - border: 2px solid white
+            - box-shadow: 2px 2px 10px rgba(0, 0, 0, 0.3)
+          icon:
+            - color: white
+          name:
+            - font-size: 14px
+            - font-weight: bold
+
+          # Кнопка ответа на вызов
+      - type: custom:button-card
+        entity: button.domofon_answer_call
+        name: ОТВЕТИТЬ
+        icon: mdi:phone
+        tap_action:
+          action: call-service
+          service: button.press
+          target:
+            entity_id: button.domofon_answer_call
+        styles:
+          card:
+            - height: 80px
+            - border-radius: 10px
+            - background-color: rgba(0, 200, 100, 0.8)
+            - color: white
+            - font-size: 18px
+            - font-weight: bold
+            - border: 2px solid white
+            - box-shadow: 2px 2px 10px rgba(0, 0, 0, 0.3)
+          icon:
+            - color: white
+          name:
+            - font-size: 14px
+            - font-weight: bold
+
+          # Кнопка завершения вызова
+      - type: custom:button-card
+        entity: button.domofon_hangup_call
+        name: СБРОСИТЬ
+        icon: mdi:phone-hangup
+        tap_action:
+          action: call-service
+          service: button.press
+          target:
+            entity_id: button.domofon_hangup_call
+        styles:
+          card:
+            - height: 80px
+            - border-radius: 10px
+            - background-color: rgba(255, 0, 0, 0.8)
+            - color: white
+            - font-size: 18px
+            - font-weight: bold
+            - border: 2px solid white
+            - box-shadow: 2px 2px 10px rgba(0, 0, 0, 0.3)
+          icon:
+            - color: white
+          name:
+            - font-size: 14px
+            - font-weight: bold
+        
+- title: Отопление
+  id: gas
+  icon: mdi:gas-burner
+  cards:
+    - type: vertical-stack
+      cards:
+        - type: entities
+          show_header_toggle: false     
+          entities:
+            - entity: climate.livingroom_thermostat
+              name: Термостат гостиной
+            - entity: input_boolean.climate_daily
+              name: Режимы термостата по расписанию
+            - entity: climate.boiler_goriachaia_voda
+              name: Горячая вода 
+            - entity: climate.boiler_kotel
+              name: Отопление   
+            - entity: binary_sensor.boiler_gorelka
+              name: Горелка
+            - entity: number.boiler_t_outdoor
+              name: Температура на улице
+              icon: mdi:sun-thermometer-outline 
+            - entity: number.boiler_t_indoor
+              name: Температура в помещении
+              icon: mdi:home-thermometer-outline
+          title: Газовый котел
+
+        - type: history-graph  
+          title: "Температура теплоносителя"
+          hours_to_show: 1
+          entities:
+            - sensor.boiler_temperatura_teplonositelia
+            
+        - type: history-graph  
+          title: "Модуляция котла"
+          hours_to_show: 1
+          entities:
+            - sensor.boiler_moduliatsiia
+            
+        - type: history-graph
+          title: Состояние сенсоров (за последний час)
+          hours_to_show: 1
+          refresh_interval: 60
+          entities:
+          - entity: binary_sensor.boiler_gorelka
+          - entity: binary_sensor.boiler_otoplenie
+          - entity: switch.virtual_heating_relay
+            
+        - type: history-graph
+          title: Тактование горелки по часам
+          hours_to_show: 24
+          entities:
+          - entity: input_number.boiler_starts_last_hour
+
+        - type: history-graph  
+          title: "Температура в гостиной и реле"
+          hours_to_show: 12
+          entities:
+            - entity: sensor.bedroom_sensor_temperature
+              name: "Спальня"
+              color: blue
+            - entity: sensor.livingroom_sensor_temperature
+              name: "Гостиная"
+              color: yellow
+            - entity: sensor.livingroom_thermostat_target
+              name: "Целевая"
+              color: red
+            - entity: switch.virtual_heating_relay

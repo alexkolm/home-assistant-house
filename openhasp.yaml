@@ -1,0 +1,302 @@
+  plate1: 
+    objects:
+      - obj: "p0b1"  # time label on all pages
+        properties:
+          "text": '{{ now().strftime("%H:%M") }}'
+      - obj: "p1b2"  # light-switch toggle button
+        properties:
+          "val": '{{ 1 if states("light.torsher_lamp") == "on" else 0 }}'
+          "text": '{{ "\uE6E8" if is_state("light.torsher_lamp", "on") else "\uE335" | e }}'
+        event:
+          "up":
+            - service: homeassistant.toggle
+              entity_id: "light.torsher_lamp"
+      - obj: "p1b3"  # dropdown
+        event:
+          "changed":
+            - service: notify.me
+              data:
+                message: |
+                  🍎 Выбран фрукт: {{ text }}
+                  🕒 Время: {{ now().strftime('%H:%M %d.%m.%Y') }}
+                  📱 С панели openHASP
+      - obj: "p1b4"  # temperature
+        properties:
+          "text": '{{ states("sensor.livingroom_sensor_temperature") }}°C'
+      - obj: "p2b7"  # temperature
+        properties:
+          "text": >
+            {% set temp = states("sensor.yard_sensor_temperature") %}
+            {% if temp != "unavailable" and temp != "unknown" %}
+            Температура во дворе: {{ temp | float | round(1) }}°C
+            {% else %}
+            Температура во дворе: Н/Д
+            {% endif %}
+      - obj: "p2b8"  # humidity
+        properties:
+          "text": >
+            {% set hum = states("sensor.yard_sensor_humidity") %}
+            {% if hum != "unavailable" and hum != "unknown" %}
+            Влажность во дворе: {{ hum | float | round(0) }}%
+            {% else %}
+            Влажность во дворе: Н/Д
+            {% endif %}
+      - obj: "p2b5"  # min temperature
+        properties:
+          "text": >
+            {% set temp_min = states("sensor.yard_temperature_min_24h") %}
+            {% if temp_min != "unavailable" and temp_min != "unknown" %}
+            min: {{ temp_min | float | round(1) }}°C
+            {% else %}
+            min: Н/Д
+            {% endif %}
+      - obj: "p2b6"  # max temperature
+        properties:
+          "text": >
+            {% set temp_max = states("sensor.yard_temperature_max_24h") %}
+            {% if temp_max != "unavailable" and temp_max != "unknown" %}
+            max: {{ temp_max | float | round(1) }}°C
+            {% else %}
+            max: Н/Д
+            {% endif %}
+      - obj: "p2b14" # Icon
+        properties:
+          "src": "{{ '/littlefs/w-128-' + states('weather.forecast_house_lenina') + '.png' if not is_state('weather.forecast_house_lenina','unavailable') }}"
+
+      - obj: "p2b15" # Current date
+        properties:
+          "text": >
+            {{ now().strftime('%A %d.%m') }}
+
+      - obj: "p2b16" # Current temperature
+        properties:
+          "text": "{{ state_attr('weather.forecast_house_lenina','temperature') | string + '°C' if not is_state('weather.forecast_house_lenina','unavailable') }}"
+
+      - obj: "p2b17" # Current weather condition (описание)
+        properties:
+          "text": >
+             {% set cond = states('weather.forecast_house_lenina') %}
+             {% if cond == "clear-night" %}Clear night
+             {% elif cond == 'cloudy' %}Cloudy
+             {% elif cond == 'fog' %}Fog
+             {% elif cond == 'hail' %}Hail
+             {% elif cond == 'lightning' %}Lightning
+             {% elif cond == 'lightning-rainy' %}Thunderstorms
+             {% elif cond == 'partlycloudy' %}Partly cloudy
+             {% elif cond == 'pouring' %}Pouring rain
+             {% elif cond == 'rainy' %}Rainy
+             {% elif cond == 'snowy' %}Snowy
+             {% elif cond == 'snowy-rainy' %}Snowy-rainy
+             {% elif cond == 'sunny' %}Sunny
+             {% elif cond == 'windy' %}Windy
+             {% elif cond == 'windy-variant' %}Windy
+             {% elif cond == 'exceptional' %}Exceptional
+             {% elif cond == 'unavailable' %}(not available)
+             {% else %}{{ cond }}{% endif %}
+
+      # Таб-переключатель (без изменений)
+      - obj: "p2b10"
+        event:
+          "changed":
+            - service: openhasp.command
+              target:
+                entity_id: openhasp.plate1
+              data:
+                keyword: p2b10.text
+                parameters: >
+                  {% if val == 0 %}
+                  {{ "#000000 \u2022# #909090 \u2022#" | e }}
+                  {%-elif val == 1 %}
+                  {{ "#909090 \u2022# #000000 \u2022#" | e }}
+                  {% endif %}
+
+      # ======== ПОЧАСОВОЙ ПРОГНОЗ ========
+
+      - obj: "p2b21" # +1 час
+        properties:
+          "text": >
+            {% set event = as_timestamp(strptime(state_attr('weather.forecast_house_lenina','forecast')[1]['datetime'], '%Y-%m-%dT%H:%M:%S%z')) %}
+            {{ event | timestamp_custom("%-I %p") }}
+
+      - obj: "p2b22"
+        properties:
+          "text": "{{ state_attr('weather.forecast_house_lenina','forecast')[1]['temperature'] | round(1) }}°"
+
+      - obj: "p2b23"
+        properties:
+          "src": "/littlefs/w-32-{{ state_attr('weather.forecast_house_lenina','forecast')[1]['condition'] }}.png"
+
+      - obj: "p2b31" # +2 часа
+        properties:
+          "text": >
+            {% set event = as_timestamp(strptime(state_attr('weather.forecast_house_lenina','forecast')[3]['datetime'], '%Y-%m-%dT%H:%M:%S%z')) %}
+            {{ event | timestamp_custom("%-I %p") }}
+
+      - obj: "p2b32"
+        properties:
+          "text": "{{ state_attr('weather.forecast_house_lenina','forecast')[3]['temperature'] | round(1) }}°"
+
+      - obj: "p2b33"
+        properties:
+          "src": "/littlefs/w-32-{{ state_attr('weather.forecast_house_lenina','forecast')[3]['condition'] }}.png"
+
+      - obj: "p2b41" # +4 часа
+        properties:
+          "text": >
+            {% set event = as_timestamp(strptime(state_attr('weather.forecast_house_lenina','forecast')[6]['datetime'], '%Y-%m-%dT%H:%M:%S%z')) %}
+            {{ event | timestamp_custom("%-I %p") }}
+
+      - obj: "p2b42"
+        properties:
+          "text": "{{ state_attr('weather.forecast_house_lenina','forecast')[6]['temperature'] | round(1) }}°"
+
+      - obj: "p2b43"
+        properties:
+          "src": "/littlefs/w-32-{{ state_attr('weather.forecast_house_lenina','forecast')[6]['condition'] }}.png"
+
+      - obj: "p2b51" # +8 часов
+        properties:
+          "text": >
+            {% set event = as_timestamp(strptime(state_attr('weather.forecast_house_lenina','forecast')[12]['datetime'], '%Y-%m-%dT%H:%M:%S%z')) %}
+            {{ event | timestamp_custom("%-I %p") }}
+
+      - obj: "p2b52"
+        properties:
+          "text": "{{ state_attr('weather.forecast_house_lenina','forecast')[12]['temperature'] | round(1) }}°"
+
+      - obj: "p2b53"
+        properties:
+          "src": "/littlefs/w-32-{{ state_attr('weather.forecast_house_lenina','forecast')[12]['condition'] }}.png"
+
+      # ======== ПОСУТОЧНЫЙ ПРОГНОЗ ========
+
+      - obj: "p2b61" # +1 день
+        properties:
+          "text": >
+            {% set event = as_timestamp(strptime(state_attr('weather.forecast_house_lenina','forecast')[0]['datetime'], '%Y-%m-%dT%H:%M:%S%z')) %}
+            {{ event | timestamp_custom("%A") }}
+
+      - obj: "p2b62"
+        properties:
+          "text": "{{ state_attr('weather.forecast_house_lenina','forecast')[0]['temperature'] | round(1) }}° / {{ state_attr('weather.forecast_house_lenina','forecast')[0]['templow'] | round(1) }}°"
+
+      - obj: "p2b63"
+        properties:
+          "src": "/littlefs/w-32-{{ state_attr('weather.forecast_house_lenina','forecast')[0]['condition'] }}.png"
+
+      - obj: "p3b1"  # состояние горелки
+        properties:
+          "val": '{{ 1 if is_state("binary_sensor.boiler_gorelka", "on") else 0 }}'
+          "text": '{{ "\uE238" if is_state("binary_sensor.boiler_gorelka", "on") else "\uE156" | e }}'
+          "bg_color": '{{ "#FFA500" if is_state("binary_sensor.boiler_gorelka", "on") else "#808080" }}'
+          "text_color": "white"
+      - obj: "p3b2"  # temperature гостиной
+        properties:
+          "text": >
+            {% set temp = states("sensor.livingroom_sensor_temperature") %}
+            {% if temp != "unavailable" and temp != "unknown" %}
+            t гостиной: {{ temp | float | round(1) }}°C
+            {% else %}
+            t гостиной: Н/Д
+            {% endif %}
+      - obj: "p3b3"  # temperature спальни
+        properties:
+          "text": >
+            {% set temp = states("sensor.bedroom_sensor_temperature") %}
+            {% if temp != "unavailable" and temp != "unknown" %}
+            t спальни: {{ temp | float | round(1) }}°C
+            {% else %}
+            t спальни: Н/Д
+            {% endif %}
+      - obj: "p3b4"  # temperature целевая
+        properties:
+          "text": >
+            {% set temp = state_attr('climate.livingroom_thermostat', 'temperature') %}
+            {% if temp != "unavailable" and temp != "unknown" %}
+            {{ temp | float | round(1) }}
+            {% else %}
+            Н/Д
+            {% endif %}
+      - obj: "p3b5"  # temperature теплоносителя
+        properties:
+          "text": >
+            {% set temp = states("sensor.boiler_temperatura_teplonositelia") %}
+            {% if temp != "unavailable" and temp != "unknown" %}
+            t теплоносителя: {{ temp | float | round(1) }}°C
+            {% else %}
+            t теплоносителя: Н/Д
+            {% endif %}
+      - obj: "p3b6"  # счетчик тактов горелки за предыдущий час
+        properties:
+          "text": >
+            {% set count = states('input_number.boiler_starts_previous_hour') %}
+            {% if count != "unavailable" and count != "unknown" %}
+            Тактов (пред.час): {{ count | int }}
+            {% else %}
+            Тактов (пред.час): Н/Д
+            {% endif %}
+      - obj: "p3b8"  # dropdown на панели openHASP
+        event:
+          "changed":
+            - variables:
+                preset_map:
+                  "нет": "none"
+                  "комфорт": "comfort"
+                  "уехали": "away"
+                  "сон": "sleep"
+                preset: "{{ preset_map.get(text, 'none') }}"
+            - service: climate.set_preset_mode
+              target:
+                entity_id: climate.livingroom_thermostat
+              data:
+                preset_mode: "{{ preset }}"
+            - service: notify.me
+              data:
+                message: |
+                  ✅ Режим термостата: {{ text }} ({{ preset }})
+                  🕒 {{ now().strftime('%H:%M %d.%m.%Y') }}
+                  📱 С панели openHASP
+      - obj: "p3b13" # переключатель отопления
+        properties:
+          "val": '{{ 1 if states("climate.livingroom_thermostat") == "heat" else 0 }}'
+        event:
+          "up":
+            - service: climate.set_hvac_mode
+              target:
+                entity_id: climate.livingroom_thermostat
+              data:
+                hvac_mode: "{{ 'heat' if val | int == 1 else 'off' }}"
+            - service: notify.me
+              data:
+                message: |
+                  🔥 Отопление {{ 'включено' if val | int == 1 else 'выключено' }}
+                  🕒 {{ now().strftime('%H:%M %d.%m.%Y') }}
+                  📱 С панели openHASP
+                  
+      - obj: "p3b15" # переключатель отопления по графику
+        properties:
+          "val": '{{ 1 if is_state("input_boolean.climate_daily", "on") else 0 }}'
+        event:
+          "up":
+            - service: input_boolean.turn_{{ 'on' if val | int == 1 else 'off' }}
+              target:
+                entity_id: input_boolean.climate_daily
+
+      - obj: "p4b2"  # домофон — открыть дверь
+        properties:
+          "text": "ОТКРЫТЬ"
+        event:
+          "down":
+            - target:
+                entity_id: switch.domofon_door_relay_0
+              action: switch.turn_on
+
+      - obj: "p4b3"  # домофон — сброс вызова
+        properties:
+          "text": "СБРОС"
+        event:
+          "down":
+            - service: button.press
+              entity_id: button.domofon_reject_call
+
+
