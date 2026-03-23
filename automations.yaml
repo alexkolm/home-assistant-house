@@ -1,3 +1,155 @@
+- id: bedroom_presence_detected
+  alias: Спальня - обнаружено присутствие
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.human_sensor_bedroom_presence
+      to: "on"
+
+  action:
+    # Включаем виртуальное присутствие
+    - service: input_boolean.turn_on
+      target:
+        entity_id: input_boolean.bedroom_presence_state
+
+    # Сбрасываем таймер выключения
+    - service: timer.cancel
+      target:
+        entity_id: timer.bedroom_presence_off_delay
+
+  mode: restart
+
+
+- id: bedroom_presence_lost
+  alias: Спальня - датчик потерял присутствие
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.human_sensor_bedroom_presence
+      to: "off"
+
+  action:
+    # Запускаем таймер отсутствия
+    - service: timer.start
+      target:
+        entity_id: timer.bedroom_presence_off_delay
+
+  mode: restart
+
+
+- id: bedroom_presence_timeout
+  alias: Спальня - виртуальное присутствие выключено по таймеру
+  trigger:
+    - platform: event
+      event_type: timer.finished
+      event_data:
+        entity_id: timer.bedroom_presence_off_delay
+
+  action:
+    - service: input_boolean.turn_off
+      target:
+        entity_id: input_boolean.bedroom_presence_state
+
+  mode: single
+
+- id: away_script
+  alias: Скрипт "Уезжаем надолго"
+  trigger:
+    - platform: event
+      event_type: telegram_command
+      event_data:
+        command: /away
+  condition: []
+  action:
+    - service: input_boolean.turn_on
+      target:
+        entity_id: input_boolean.notify_away_home
+  mode: single
+
+- id: faraway
+  alias: Включение режима, когда уезжаем из дома надолго
+  trigger:
+    - platform: state
+      entity_id: input_boolean.notify_away_home
+      to: "on"
+
+  condition: []
+
+  action:
+    # сообщение на колонку
+    - service: media_player.play_media
+      target:
+        entity_id: !secret yandex_station_livingroom
+      data:
+        media_content_id: Уезжаем надолго
+        media_content_type: text
+        extra:
+          volume_level: 0.7
+
+    # оповещение в телеграм
+    - service: notify.me
+      data:
+        message: "Скрипт 'Уехали надолго' запущен"
+
+    # отключаем бойлер
+    - service: switch.turn_off
+      target:
+        entity_id: switch.boiler_plug
+        
+    # отключаем полотенцесушитель
+#    - service: switch.turn_off
+#      target:
+#        entity_id: switch.towel_dryer_plug
+        
+# перезапуск питания теплого пола и полотенцесушителя
+    - service: switch.turn_off
+      target:
+        entity_id:
+          - switch.main_floor_relay
+          - switch.towel_dryer_plug
+
+    - delay: "00:00:05"
+
+    - service: switch.turn_on
+      target:
+        entity_id:
+          - switch.main_floor_relay
+          - switch.towel_dryer_plug
+
+    # ⬇️ Работа с термостатом ТОЛЬКО если он в режиме heat
+    - choose:
+        - conditions:
+            - condition: state
+              entity_id: climate.livingroom_thermostat
+              state: "heat"
+          sequence:
+            # отключаем режим день/ночь
+            - service: input_boolean.turn_off
+              target:
+                entity_id: input_boolean.climate_daily
+
+            # ставим away
+            - service: climate.set_preset_mode
+              target:
+                entity_id: climate.livingroom_thermostat
+              data:
+                preset_mode: "away"
+
+  mode: single
+  
+- id: notify_offline_restore_after_48h
+  alias: Restore notify_offline after 48h
+  mode: restart
+  trigger:
+    - platform: state
+      entity_id: input_boolean.notify_offline
+      to: "off"
+
+  action:
+    - delay: "48:00:00"
+
+    - service: input_boolean.turn_on
+      target:
+        entity_id: input_boolean.notify_offline
+        
 - id: boiler_control_by_thermostat
   alias: 'Управление газовым котлом по термостату'
   trigger:
@@ -741,26 +893,33 @@
 - id: devices_offline_notification
   alias: Оповещение о потере связи с устройствами
   trigger:
-    platform: state
-    entity_id:
-      - binary_sensor.domofon_ping
-      - binary_sensor.videoreg_ping
-      - binary_sensor.192_168_0_50
-      - binary_sensor.openhasp_panel
-      - binary_sensor.gas_ping
-    to: 'off'
+    - platform: state
+      entity_id:
+        - binary_sensor.domofon_ping
+        - binary_sensor.videoreg_ping
+        - binary_sensor.192_168_0_50
+        - binary_sensor.openhasp_panel
+        - binary_sensor.gas_ping
+      to: 'off'
+      for: "00:02:00"
+
+  condition:
+    - condition: state
+      entity_id: input_boolean.notify_offline
+      state: 'on'
+
   action:
-  - service: notify.me
-    data:
-      message: >
-        {% set devices = {
-          'binary_sensor.domofon_ping': ['Домофон', '192.168.0.200'],
-          'binary_sensor.videoreg_ping': ['Видеосервер', '192.168.0.150'],
-          'binary_sensor.192_168_0_50': ['Zigbee-роутер', '192.168.0.50'],
-          'binary_sensor.openhasp_panel': ['OpenHASP панель', '192.168.0.120'],
-          'binary_sensor.gas_ping': ['SmartTherm', '192.168.0.212']
-        } %}
-        ША: {{ devices[trigger.entity_id][0] }} ({{ devices[trigger.entity_id][1] }}) не в сети
+    - service: notify.me
+      data:
+        message: >
+          {% set devices = {
+            'binary_sensor.domofon_ping': ['Домофон', '192.168.0.200'],
+            'binary_sensor.videoreg_ping': ['Видеосервер', '192.168.0.150'],
+            'binary_sensor.192_168_0_50': ['Zigbee-роутер', '192.168.0.50'],
+            'binary_sensor.openhasp_panel': ['OpenHASP панель', '192.168.0.120'],
+            'binary_sensor.gas_ping': ['SmartTherm', '192.168.0.212']
+          } %}
+          ША: {{ devices[trigger.entity_id][0] }} ({{ devices[trigger.entity_id][1] }}) не в сети более 2 минут
 - id: leaving_home
   alias: Хозяева покинули дом
   trigger:
@@ -819,12 +978,15 @@
 - id: sun_set
   alias: Закат (использую для проверки, включен ли сервер)
   trigger:
-  - platform: sun
-    event: sunset
+    - platform: sun
+      event: sunset
   action:
-  - service: notify.me
-    data:
-      message: "ША: Солнце село \U0001F305"
+    - service: notify.me
+      data:
+        message: |
+          ША: Солнце село 🌅
+          temp out {{ states('sensor.yard_sensor_temperature') | float(0) | round(1) }}°C / in {{ states('sensor.bedroom_sensor_temperature') | float(0) | round(1) }}°C
+  mode: single
 - id: leak_warning_kitchen
   alias: Оповещение о протечке в кухне
   triggers:

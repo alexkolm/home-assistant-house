@@ -8,6 +8,8 @@ views:
       show_header_toggle: false     
       entities:
       - entity: input_boolean.notify_door
+      - entity: input_boolean.notify_away_home
+      - entity: input_boolean.notify_offline
       - entity: input_boolean.notify_boiler
       - entity: input_boolean.notify_count
       - entity: input_boolean.test_gate_open
@@ -82,7 +84,7 @@ views:
       - entity: switch.livingroom_relay
         name: Люстра
         icon: mdi:ceiling-light-outline
-      - entity: binary_sensor.datchik_zadymleniia_v_dome_smoke
+      - entity: binary_sensor.smoke_sensor_smoke
         name: Датчик дыма
       - entity: binary_sensor.back_door_contact
         name: Задняя дверь
@@ -133,9 +135,16 @@ views:
         name: Температура
       - entity: sensor.bedroom_sensor_humidity
         name: Влажность
-      - entity: switch.videoreg_plug
+      - entity: switch.videoreg_relay
         name: Видеорегистратор
         icon: mdi:video-box
+      - entity: binary_sensor.human_sensor_bedroom_presence
+        name: Сенсор присутствия
+        icon: mdi:motion-sensor  
+        # ВИРТУАЛЬНОЕ ПРИСУТСТВИЕ (главное)
+      - entity: binary_sensor.bedroom_presence_virtual
+        name: Присутствие (умное)
+        icon: mdi:account
       - entity: sensor.podval_sensor_temperature
         name: Температура под спальней
       - entity: sensor.podval_sensor_humidity
@@ -145,6 +154,8 @@ views:
     - type: entities
       show_header_toggle: false     
       entities:
+      - entity: switch.ups_relay_switch
+        name: Рубильник на UPS
       - entity: binary_sensor.motion_sensor_occupancy
         name: Движение
       - entity: binary_sensor.front_door_contact
@@ -153,6 +164,9 @@ views:
       - entity: switch.ipcam_plug
         name: IP-камера кошки
         icon: mdi:webcam
+      - entity: switch.main_floor_relay
+        name: Теплый пол прихожей и туалета
+        icon: mdi:heating-coil
       title: Коридор        
       
     - type: entities
@@ -161,6 +175,12 @@ views:
       - entity: switch.airvent_relay
         name: Вентилятор вытяжки
         icon: mdi:hvac
+      - entity: switch.boiler_plug
+        name: Электроводонагреватель
+        icon: mdi:water-boiler      
+      - entity: switch.towel_dryer_plug
+        name: Полотенцесушитель
+        icon: mdi:heating-coil 
       - entity: binary_sensor.human_sensor_bathroom_presence
         name: Сенсор присутствия
         icon: mdi:motion-sensor  
