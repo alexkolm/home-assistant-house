@@ -1,3 +1,64 @@
+- id: button_door_open
+  alias: Домофон — открыть с кнопки (Zigbee)
+  mode: single
+
+  trigger:
+    - platform: mqtt
+      topic: "zigbee2mqtt_poe/button_door/action"
+      payload: "single"
+
+  condition: []
+
+  action:
+    - parallel:
+
+        # Открытие замка
+        - sequence:
+            - service: switch.turn_on
+              target:
+                entity_id: switch.domofon_door_rest
+
+        # Озвучка
+        - sequence:
+            - service: media_player.play_media
+              target:
+                entity_id: !secret yandex_station_livingroom
+              data:
+                media_content_id: Кнопка нажата
+                media_content_type: text
+                extra:
+                  volume_level: 0.7
+              continue_on_error: true
+
+- id: boiler_temp_limit
+  alias: Ограничение температуры котла
+  mode: single
+  trigger:
+    - platform: numeric_state
+      entity_id: climate.boiler_kotel
+      attribute: temperature
+      above: 70
+
+  action:
+  # Устанавливаем обратно 70
+    - service: climate.set_temperature
+      target:
+        entity_id: climate.boiler_kotel
+      data:
+        temperature: 70
+
+  # Запись в лог HA
+    - service: logbook.log
+      data:
+        name: "Котёл"
+        message: "Автоматизация ограничила температуру до 70°C"
+        entity_id: climate.boiler_kotel
+
+    # Оповещение в Telegram
+    - service: notify.me
+      data:
+        message: "Ограничиваем максимальную температуру котла автоматизацией"
+
 - id: bedroom_presence_detected
   alias: Спальня - обнаружено присутствие
   trigger:
@@ -93,11 +154,6 @@
     - service: switch.turn_off
       target:
         entity_id: switch.boiler_plug
-        
-    # отключаем полотенцесушитель
-#    - service: switch.turn_off
-#      target:
-#        entity_id: switch.towel_dryer_plug
         
 # перезапуск питания теплого пола и полотенцесушителя
     - service: switch.turn_off
@@ -362,23 +418,6 @@
                 message: "Состояния совпадают, изменений не требуется"
 
   mode: single
-
-- id: domofon_auto_hangup_after_unlock
-  alias: 'Домофон: сброс вызова после открытия калитки'
-  trigger:
-    - platform: state
-      entity_id: switch.domofon_door_relay_0
-      to: 'on'
-  condition:
-    - condition: state
-      entity_id: sensor.domofon_call_state
-      state: 'ringing'
-  action:
-    - delay: "00:00:03"
-    - service: button.press
-      target:
-        entity_id: button.domofon_hangup_call
-  mode: single
 - id: house_devices_off
   alias: "Контроль освещения — выключить после 5 часов работы"
   trigger:
@@ -547,6 +586,7 @@
                 message: >
                   🔄 Режим термостата автоматически изменён:
                   {{ desired_preset | replace('comfort','Комфорт') | replace('sleep','Сон') }}
+                  🌡 Температура гостиной: {{ states('sensor.livingroom_sensor_temperature') | float(0) | round(1) }}°C
                   🕒 {{ now().strftime('%H:%M %d.%m.%Y') }}
 
     ######################################
@@ -746,16 +786,23 @@
       message: "Проверьте влажность почвы у цветов в доме\n \U0001F331 Влажность ниже
         100%.\n \n"
 - id: gate_open
-  alias: Информирование на колонку, фото и видео по очереди
-  trigger: 
-    - platform: state
-      entity_id: switch.domofon_door_relay_0
-      to: 'on'
+  alias: Домофон — калитка открыта
+  mode: single
+
+  trigger:
+    - platform: event
+      event_type: call_service
+
+  condition:
+    - condition: template
+      value_template: >
+        {{ trigger.event.data.domain == 'rest_command'
+           and trigger.event.data.service == 'domofon_open_door' }}
 
   action:
     - parallel:
 
-        # 2️⃣ Озвучка на колонке
+        # Озвучка
         - sequence:
             - service: media_player.play_media
               target:
@@ -765,35 +812,44 @@
                 media_content_type: text
                 extra:
                   volume_level: 0.7
-                  
-        # 1️⃣ Съёмка фото и видео
+
+        # Фото + видео
         - sequence:
             - service: camera.snapshot
               data:
                 entity_id: camera.domofon_audio
                 filename: /config/www/domofon.jpg
+
             - service: shell_command.record_domofon_video
 
-        # 3️⃣ Отправка фото и видео после задержки
+        # Завершить вызов (через JSON API — стабильный вариант)
+        - sequence:
+            - delay: "00:00:02"
+
+            - service: rest_command.domofon_reject_call
+              continue_on_error: true
+
+        # Отправка фото и видео
         - sequence:
             - delay: "00:00:07"
             - service: notify.me
               data:
-                message: ""   # обязательный ключ, даже если caption используется
+                message: ""
                 data:
                   photo:
                     - file: /config/www/domofon.jpg
                       caption: "Калитка открыта. Фото 📸"
+
             - delay: "00:00:02"
             - service: notify.me
               data:
-                message: ""   # обязательно, иначе ошибка
+                message: ""
                 data:
                   video:
                     - file: /config/www/domofon.mp4
                       caption: "... и видео 🎥"
+
             - service: shell_command.delete_domofon_video
-  mode: single
 
 - id: boiler_off
   alias: Отключение отопления
@@ -987,38 +1043,47 @@
           ША: Солнце село 🌅
           temp out {{ states('sensor.yard_sensor_temperature') | float(0) | round(1) }}°C / in {{ states('sensor.bedroom_sensor_temperature') | float(0) | round(1) }}°C
   mode: single
-- id: leak_warning_kitchen
-  alias: Оповещение о протечке в кухне
-  triggers:
-  - entity_id:
-    - binary_sensor.leak_kitchen_water_leak
-    to: 'on'
-    trigger: state
-  actions:
-  - data:
-      message: 'ША: Протечка в кухне'
-    action: notify.me
-  - target:
-      entity_id: !secret yandex_station_livingroom
-    data:
-      media_content_id: Протечка в кухне
-      media_content_type: text
-      extra:
-        volume_level: 0.7
-    action: media_player.play_media
+- id: leak_water_protection
+  alias: Протечка — перекрытие воды и оповещение
   mode: single
-- id: leak_warning_toilet
-  alias: Оповещение о протечке в туалете
-  triggers:
-  - entity_id:
-    - binary_sensor.leak_toilet_water_leak
-    to: 'on'
-    trigger: state
-  actions:
-  - data:
-      message: 'ША: Протечка в туалете'
-    action: notify.me
-  mode: single
+
+  trigger:
+    - platform: state
+      entity_id:
+        - binary_sensor.leak_kitchen_water_leak
+        - binary_sensor.leak_toilet_water_leak
+      to: 'on'
+
+  variables:
+    leak_place: >
+      {% if trigger.entity_id == 'binary_sensor.leak_kitchen_water_leak' %}
+        кухне
+      {% elif trigger.entity_id == 'binary_sensor.leak_toilet_water_leak' %}
+        туалете
+      {% else %}
+        неизвестном месте
+      {% endif %}
+
+  action:
+    # 🚰 Перекрыть воду
+    - service: switch.turn_on
+      target:
+        entity_id: switch.water_isolation_valve
+
+    # 📩 Уведомление в Telegram
+    - service: notify.me
+      data:
+        message: "🚨 ПРОТЕЧКА в {{ leak_place }}! Вода перекрыта."
+
+    # 🔊 Озвучка на колонке
+    - service: media_player.play_media
+      target:
+        entity_id: !secret yandex_station_livingroom
+      data:
+        media_content_id: "Обнаружена протечка в {{ leak_place }}. Вода перекрыта."
+        media_content_type: text
+        extra:
+          volume_level: 0.9  
 - id: domofon_ringing
   alias: Вызов на домофоне
   trigger: 

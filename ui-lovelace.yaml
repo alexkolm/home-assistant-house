@@ -12,7 +12,10 @@ views:
       - entity: input_boolean.notify_offline
       - entity: input_boolean.notify_boiler
       - entity: input_boolean.notify_count
-      - entity: input_boolean.test_gate_open
+#      - entity: input_boolean.test_gate_open
+      - entity: switch.domofon_door_rest
+        name: Открытие калитки
+        icon: mdi:door-closed-lock
       title: Управление домом
       
     - type: entities
@@ -149,6 +152,9 @@ views:
         name: Температура под спальней
       - entity: sensor.podval_sensor_humidity
         name: Влажность в подвале
+      - entity: switch.water_isolation_valve
+        name: Перекрытие воды в дом
+        icon: mdi:valve
       title: Спальня
  
     - type: entities
@@ -229,10 +235,17 @@ views:
           entities:
             - sensor.yard_sensor_pressure
             - entity: sensor.yard_sensor_pressure
-              name: "Давление (двор.), hPa"
+              name: "Давление (двор.)"
             - sensor.podval_sensor_pressure
             - entity: sensor.podval_sensor_pressure
-              name: "Давление (подв.), hPa"
+              name: "Давление (подв.)"
+
+        - type: history-graph
+          title: "Атмосферное давление за последние 96 часов"
+          hours_to_show: 96
+          entities:
+            - entity: sensor.atmospheric_pressure_mmhg
+              name: "Давление (сред.)"
 
         - type: history-graph
           title: "Температура в доме за последние 96 часов"

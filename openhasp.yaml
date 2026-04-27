@@ -288,7 +288,7 @@
         event:
           "down":
             - target:
-                entity_id: switch.domofon_door_relay_0
+                entity_id: switch.domofon_door_rest
               action: switch.turn_on
 
       - obj: "p4b3"  # домофон — сброс вызова
