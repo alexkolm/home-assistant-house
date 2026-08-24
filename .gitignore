@@ -7,7 +7,7 @@
 # Allow only YAML files in repository root
 # ==================================================
 !/*.yaml
-
+!/pages.jsonl
 # ==================================================
 # Explicitly keep .gitignore itself
 # ==================================================
