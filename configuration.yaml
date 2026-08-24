@@ -262,7 +262,7 @@ template:
               'snowy-rainy': '\uE67F',
               'sunny': '\uE599',
               'windy': '\uE59D',
-              'windy-variant': '\uE59E
+              'windy-variant': '\uE59E'
             } %}
 
             {% set colors = {
@@ -293,11 +293,22 @@ template:
               6: 'ВС'
             } %}
 
+            {% set directions = [
+              'С', 'СВ', 'В', 'ЮВ',
+              'Ю', 'ЮЗ', 'З', 'СЗ'
+            ] %}
+
             {% set result = namespace(items=[]) %}
 
             {% for item in daily_forecast["weather.forecast_house_lenina"]["forecast"][:6] %}
 
               {% set dt = as_datetime(item.datetime) %}
+
+              {% set bearing = item.wind_bearing | float(0) %}
+
+              {% set direction =
+                directions[((bearing + 22.5) / 45) | int % 8]
+              %}
 
               {% set result.items = result.items + [{
                 'date': days[dt.weekday()] ~ ' ' ~ dt.strftime('%d.%m'),
@@ -305,7 +316,11 @@ template:
                 'templow': item.templow | round(1),
                 'condition': item.condition,
                 'icon': icons.get(item.condition, '\uE026'),
-                'color': colors.get(item.condition, '#78909C')
+                'color': colors.get(item.condition, '#78909C'),
+                'precipitation': item.precipitation | float(0) | round(1),
+                'wind_bearing': bearing | round(1),
+                'wind_direction': direction,
+                'wind_speed': item.wind_speed | float(0) | round(1)
               }] %}
 
             {% endfor %}

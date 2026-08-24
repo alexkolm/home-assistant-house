@@ -109,21 +109,17 @@
       - obj: "p2b18"
         properties:
           "text": >
-            {{ '\uE58C' }} {{ state_attr('sensor.openhasp_weather_daily', 'forecast')[0]['precipitation'] | float | round(1) }} мм
+            {{ '\uE58C' }} {{ state_attr('sensor.openhasp_weather_daily', 'weather_display')[0]['precipitation'] }} мм
 
-      - obj: "p2b19" # Направление ветра сегодня
+      - obj: "p2b19"
         properties:
           "text": >
-            {% set forecast = state_attr('sensor.openhasp_weather_daily', 'forecast')[0] %}
-            {% set bearing = forecast['wind_bearing'] | float %}
-            {% set directions = ['С', 'СВ', 'В', 'ЮВ', 'Ю', 'ЮЗ', 'З', 'СЗ'] %}
-            {{ '\uE59D' }} {{ directions[((bearing + 22.5) / 45) | int % 8] }}
+            {{ '\uE59D' }} {{ state_attr('sensor.openhasp_weather_daily', 'weather_display')[0]['wind_direction'] }}
 
-      - obj: "p2b20" # Скорость ветра сегодня
+      - obj: "p2b20"
         properties:
           "text": >
-            {% set forecast = state_attr('sensor.openhasp_weather_daily', 'forecast')[0] %}
-            {{ forecast['wind_speed'] | float | round(1) }} м/с
+            {{ state_attr('sensor.openhasp_weather_daily', 'weather_display')[0]['wind_speed'] }} м/с
              
       # ============================================================
       # ПОСУТОЧНЫЙ ПРОГНОЗ
