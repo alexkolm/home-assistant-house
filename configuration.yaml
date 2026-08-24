@@ -43,6 +43,18 @@ rest_command:
     headers:
       Content-Type: application/json
     payload: '{"CallSignal":{"cmdType":"reject"}}'
+    
+  wled_preset_1:
+    url: "http://192.168.0.143/json/state"
+    method: POST
+    content_type: "application/json"
+    payload: '{"ps":1}'
+
+  wled_preset_2:
+    url: "http://192.168.0.143/json/state"
+    method: POST
+    content_type: "application/json"
+    payload: '{"ps":2}'
 
 input_boolean:
   notify_door:
@@ -154,6 +166,8 @@ template:
 
           {% set v1 = s1 | float(default=None) %}
           {% set v2 = s2 | float(default=None) %}
+          
+          {% set offset = 7 %}
 
           {% if v1 == 0 %}{% set v1 = None %}{% endif %}
           {% if v2 == 0 %}{% set v2 = None %}{% endif %}
@@ -188,6 +202,115 @@ template:
         state: >
           {{ as_timestamp(state_attr('sun.sun', 'next_setting')) | timestamp_custom('%H:%M') }}
         unique_id: "next_sunset"
+        
+  - triggers:
+      # Обновлять прогноз раз в час
+      - trigger: time_pattern
+        hours: "/1"
+
+      # Получить прогноз сразу после запуска HA
+      - trigger: homeassistant
+        event: start
+
+    actions:
+      - action: weather.get_forecasts
+        target:
+          entity_id: weather.forecast_house_lenina
+        data:
+          type: daily
+        response_variable: daily_forecast
+
+    sensor:
+      - name: "OpenHASP Weather Daily"
+        unique_id: openhasp_weather_daily
+
+        state: "{{ now().isoformat() }}"
+
+        attributes:
+
+          # ========================================================
+          # ИСХОДНЫЙ ПРОГНОЗ
+          # ========================================================
+
+          forecast: >
+            {{ daily_forecast["weather.forecast_house_lenina"]["forecast"] }}
+
+
+          # ========================================================
+          # ГОТОВЫЕ ДАННЫЕ ДЛЯ OPENHASP
+          #
+          # [0] — сегодня
+          # [1] — завтра
+          # [2] — +2
+          # ...
+          # [5] — +5
+          # ========================================================
+
+          weather_display: >
+
+            {% set icons = {
+              'clear-night': '\uE594',
+              'cloudy': '\uE590',
+              'fog': '\uE591',
+              'hail': '\uE592',
+              'lightning': '\uE593',
+              'lightning-rainy': '\uE67E',
+              'partlycloudy': '\uE595',
+              'pouring': '\uE596',
+              'rainy': '\uE597',
+              'snowy': '\uE598',
+              'snowy-rainy': '\uE67F',
+              'sunny': '\uE599',
+              'windy': '\uE59D',
+              'windy-variant': '\uE59E
+            } %}
+
+            {% set colors = {
+              'sunny': '#FFD43B',
+              'clear-night': '#8AB4F8',
+              'cloudy': '#B8C4CE',
+              'fog': '#A7B4BD',
+              'hail': '#80DEEA',
+              'lightning': '#FFCA28',
+              'lightning-rainy': '#B388FF',
+              'partlycloudy': '#B8D4F0',
+              'pouring': '#2196F3',
+              'rainy': '#42A5F5',
+              'snowy': '#D6F3FF',
+              'snowy-rainy': '#90CAF9',
+              'windy': '#64B5F6',
+              'windy-variant': '#64B5F6',
+              'exceptional': '#FF9800'
+            } %}
+
+            {% set days = {
+              0: 'ПН',
+              1: 'ВТ',
+              2: 'СР',
+              3: 'ЧТ',
+              4: 'ПТ',
+              5: 'СБ',
+              6: 'ВС'
+            } %}
+
+            {% set result = namespace(items=[]) %}
+
+            {% for item in daily_forecast["weather.forecast_house_lenina"]["forecast"][:6] %}
+
+              {% set dt = as_datetime(item.datetime) %}
+
+              {% set result.items = result.items + [{
+                'date': days[dt.weekday()] ~ ' ' ~ dt.strftime('%d.%m'),
+                'temperature': item.temperature | round(1),
+                'templow': item.templow | round(1),
+                'condition': item.condition,
+                'icon': icons.get(item.condition, '\uE026'),
+                'color': colors.get(item.condition, '#78909C')
+              }] %}
+
+            {% endfor %}
+
+            {{ result.items }}
 
 mqtt:
   sensor:

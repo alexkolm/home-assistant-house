@@ -129,6 +129,9 @@ views:
       - entity: switch.gas_usb
         name: USB-розетка газ. котла
         icon: mdi:usb-port
+      - entity: switch.ipcam_plug
+        name: IP-камера кошки
+        icon: mdi:webcam
       title: Кухня
       
     - type: entities
@@ -141,6 +144,9 @@ views:
       - entity: switch.videoreg_relay
         name: Видеорегистратор
         icon: mdi:video-box
+      - entity: switch.wled_plug
+        name: Подсветка под кроватью
+        icon: mdi:led-strip-variant
       - entity: binary_sensor.human_sensor_bedroom_presence
         name: Сенсор присутствия
         icon: mdi:motion-sensor  
@@ -167,9 +173,6 @@ views:
       - entity: binary_sensor.front_door_contact
         name: Парадная дверь
         icon: 'mdi:door'    
-      - entity: switch.ipcam_plug
-        name: IP-камера кошки
-        icon: mdi:webcam
       - entity: switch.main_floor_relay
         name: Теплый пол прихожей и туалета
         icon: mdi:heating-coil
@@ -228,17 +231,6 @@ views:
               name: Следующий закат
               icon: mdi:weather-sunset-down
           title: Солнце
-
-        - type: history-graph
-          title: "Атмосферное давление за последние 96 часов"
-          hours_to_show: 96
-          entities:
-            - sensor.yard_sensor_pressure
-            - entity: sensor.yard_sensor_pressure
-              name: "Давление (двор.)"
-            - sensor.podval_sensor_pressure
-            - entity: sensor.podval_sensor_pressure
-              name: "Давление (подв.)"
 
         - type: history-graph
           title: "Атмосферное давление за последние 96 часов"

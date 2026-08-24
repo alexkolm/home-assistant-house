@@ -1,3 +1,55 @@
+- id: awtrix_right_button_wled
+  alias: AWTRIX — правая кнопка — подсветка под кроватью
+  mode: single
+
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.awtrix_1ed68c_button_right
+      to: "on"
+
+  action:
+    - choose:
+
+        # Розетка выключена → включаем питание,
+        # ждём загрузки WLED и запускаем BlueWave
+        - conditions:
+            - condition: state
+              entity_id: switch.wled_plug
+              state: "off"
+          sequence:
+            - service: switch.turn_on
+              target:
+                entity_id: switch.wled_plug
+
+            - delay:
+                seconds: 3
+
+            - service: rest_command.wled_preset_2
+
+        # Розетка включена, но WLED выключен (Preset 1)
+        # → запускаем BlueWave
+        - conditions:
+            - condition: state
+              entity_id: switch.wled_plug
+              state: "on"
+            - condition: state
+              entity_id: light.wled
+              state: "off"
+          sequence:
+            - service: rest_command.wled_preset_2
+
+        # Розетка включена и WLED светит (Preset 2)
+        # → переводим в LightOFF, розетку НЕ выключаем
+        - conditions:
+            - condition: state
+              entity_id: switch.wled_plug
+              state: "on"
+            - condition: state
+              entity_id: light.wled
+              state: "on"
+          sequence:
+            - service: rest_command.wled_preset_1
+
 - id: button_door_open
   alias: Домофон — открыть с кнопки (Zigbee)
   mode: single
@@ -21,6 +73,7 @@
         # Озвучка
         - sequence:
             - service: media_player.play_media
+              continue_on_error: true
               target:
                 entity_id: !secret yandex_station_livingroom
               data:
@@ -28,7 +81,6 @@
                 media_content_type: text
                 extra:
                   volume_level: 0.7
-              continue_on_error: true
 
 - id: boiler_temp_limit
   alias: Ограничение температуры котла
@@ -125,8 +177,28 @@
         entity_id: input_boolean.notify_away_home
   mode: single
 
+- id: away_script
+  alias: Скрипт "Уезжаем надолго"
+
+  trigger:
+    - platform: event
+      event_type: telegram_command
+      event_data:
+        command: /away
+
+  condition: []
+
+  action:
+    - service: input_boolean.turn_on
+      target:
+        entity_id: input_boolean.notify_away_home
+
+  mode: single
+
+
 - id: faraway
   alias: Включение режима, когда уезжаем из дома надолго
+
   trigger:
     - platform: state
       entity_id: input_boolean.notify_away_home
@@ -135,8 +207,10 @@
   condition: []
 
   action:
+
     # сообщение на колонку
     - service: media_player.play_media
+      continue_on_error: true
       target:
         entity_id: !secret yandex_station_livingroom
       data:
@@ -147,6 +221,7 @@
 
     # оповещение в телеграм
     - service: notify.me
+      continue_on_error: true
       data:
         message: "Скрипт 'Уехали надолго' запущен"
 
@@ -154,8 +229,8 @@
     - service: switch.turn_off
       target:
         entity_id: switch.boiler_plug
-        
-# перезапуск питания теплого пола и полотенцесушителя
+
+    # перезапуск питания теплого пола и полотенцесушителя
     - service: switch.turn_off
       target:
         entity_id:
@@ -170,13 +245,15 @@
           - switch.main_floor_relay
           - switch.towel_dryer_plug
 
-    # ⬇️ Работа с термостатом ТОЛЬКО если он в режиме heat
+    # Работа с термостатом ТОЛЬКО если он в режиме heat
     - choose:
         - conditions:
             - condition: state
               entity_id: climate.livingroom_thermostat
               state: "heat"
+
           sequence:
+
             # отключаем режим день/ночь
             - service: input_boolean.turn_off
               target:
@@ -184,6 +261,7 @@
 
             # ставим away
             - service: climate.set_preset_mode
+              continue_on_error: true
               target:
                 entity_id: climate.livingroom_thermostat
               data:
@@ -464,26 +542,33 @@
   max: 3
 - id: panel_cam_snapshot
   alias: Отображение кадра с домофона
+
   triggers:
-  - seconds: /2
-    trigger: time_pattern
+    - seconds: /2
+      trigger: time_pattern
+
   conditions:
-  - condition: state
-    entity_id: light.plate1_backlight
-    state: 'on'
-  - condition: state
-    entity_id: number.plate1_page_number
-    state: '4'
+    - condition: state
+      entity_id: light.plate1_backlight
+      state: 'on'
+
+    - condition: state
+      entity_id: number.plate1_page_number
+      state: '4'
+
   actions:
-  - target:
-      entity_id: openhasp.plate1
-    data:
-      obj: p4b1
-      image: http://192.168.0.101/snapshot.jpg
-      width: 480
-      height: 270
-    action: openhasp.push_image
+    - action: openhasp.push_image
+      continue_on_error: true
+      target:
+        entity_id: openhasp.plate1
+      data:
+        obj: p4b1
+        image: http://192.168.0.101/snapshot.jpg
+        width: 480
+        height: 270
+
   mode: restart
+  
 - id: boiler_count_starts
   alias: Счётчик включений горелки
   trigger:
@@ -785,6 +870,7 @@
     data:
       message: "Проверьте влажность почвы у цветов в доме\n \U0001F331 Влажность ниже
         100%.\n \n"
+        
 - id: gate_open
   alias: Домофон — калитка открыта
   mode: single
@@ -805,6 +891,7 @@
         # Озвучка
         - sequence:
             - service: media_player.play_media
+              continue_on_error: true
               target:
                 entity_id: !secret yandex_station_livingroom
               data:
@@ -816,13 +903,15 @@
         # Фото + видео
         - sequence:
             - service: camera.snapshot
+              continue_on_error: true
               data:
                 entity_id: camera.domofon_audio
                 filename: /config/www/domofon.jpg
 
             - service: shell_command.record_domofon_video
+              continue_on_error: true
 
-        # Завершить вызов (через JSON API — стабильный вариант)
+        # Завершить вызов
         - sequence:
             - delay: "00:00:02"
 
@@ -831,8 +920,11 @@
 
         # Отправка фото и видео
         - sequence:
+
             - delay: "00:00:07"
+
             - service: notify.me
+              continue_on_error: true
               data:
                 message: ""
                 data:
@@ -841,7 +933,9 @@
                       caption: "Калитка открыта. Фото 📸"
 
             - delay: "00:00:02"
+
             - service: notify.me
+              continue_on_error: true
               data:
                 message: ""
                 data:
@@ -850,7 +944,8 @@
                       caption: "... и видео 🎥"
 
             - service: shell_command.delete_domofon_video
-
+              continue_on_error: true
+              
 - id: boiler_off
   alias: Отключение отопления
   triggers:
@@ -989,9 +1084,13 @@
   - service: switch.turn_on
     data:
       entity_id: switch.ipcam_plug
+  - service: switch.turn_off
+    data:
+      entity_id: switch.wled_plug
   - service: input_boolean.turn_on
     target:
       entity_id: input_boolean.notify_door
+
 - id: entering_home
   alias: Хозяин вернулся в дом
   trigger:
@@ -1002,10 +1101,13 @@
   action:
   - service: notify.me
     data:
-      message: 'ША: Кто-то из хозяев пришёл, уведомления об открытии дверей отключены'
+      message: 'ША: Кто-то из хозяев пришёл в дом, уведомления об открытии дверей отключены'
   - service: switch.turn_off
     data:
       entity_id: switch.ipcam_plug
+  - service: switch.turn_on
+    data:
+      entity_id: switch.wled_plug
   - service: input_boolean.turn_off
     target:
       entity_id: input_boolean.notify_door

@@ -23,23 +23,14 @@
       - obj: "p1b4"  # temperature
         properties:
           "text": '{{ states("sensor.livingroom_sensor_temperature") }}°C'
-      - obj: "p2b7"  # temperature
-        properties:
-          "text": >
-            {% set temp = states("sensor.yard_sensor_temperature") %}
-            {% if temp != "unavailable" and temp != "unknown" %}
-            Температура во дворе: {{ temp | float | round(1) }}°C
-            {% else %}
-            Температура во дворе: Н/Д
-            {% endif %}
       - obj: "p2b8"  # humidity
         properties:
           "text": >
             {% set hum = states("sensor.yard_sensor_humidity") %}
             {% if hum != "unavailable" and hum != "unknown" %}
-            Влажность во дворе: {{ hum | float | round(0) }}%
+            влажность: {{ hum | float | round(0) }}%
             {% else %}
-            Влажность во дворе: Н/Д
+            влажность: Н/Д
             {% endif %}
       - obj: "p2b5"  # min temperature
         properties:
@@ -59,131 +50,192 @@
             {% else %}
             max: Н/Д
             {% endif %}
-      - obj: "p2b14" # Icon
-        properties:
-          "src": "{{ '/littlefs/w-128-' + states('weather.forecast_house_lenina') + '.png' if not is_state('weather.forecast_house_lenina','unavailable') }}"
+            
+            
+      # ============================================================
+      # ТЕКУЩАЯ ПОГОДА — БОЛЬШОЙ БЛОК
+      # ============================================================
 
-      - obj: "p2b15" # Current date
+      - obj: "p2b14"
+        properties:
+          "text": "{{ state_attr('sensor.openhasp_weather_daily', 'weather_display')[0]['icon'] }}"
+          "text_color": "{{ state_attr('sensor.openhasp_weather_daily', 'weather_display')[0]['color'] }}"
+            
+      - obj: "p2b15" # День недели + текущая дата
         properties:
           "text": >
-            {{ now().strftime('%A %d.%m') }}
+            {% set days = {
+              0: 'понедельник',
+              1: 'вторник',
+              2: 'среда',
+              3: 'четверг',
+              4: 'пятница',
+              5: 'суббота',
+              6: 'воскресенье'
+            } %}
+            {{ days[now().weekday()] }} {{ now().strftime('%d.%m') }}
 
-      - obj: "p2b16" # Current temperature
+      - obj: "p2b16" # Текущая температура
         properties:
           "text": "{{ state_attr('weather.forecast_house_lenina','temperature') | string + '°C' if not is_state('weather.forecast_house_lenina','unavailable') }}"
 
-      - obj: "p2b17" # Current weather condition (описание)
+
+      - obj: "p2b17" # Описание текущей погоды
         properties:
           "text": >
              {% set cond = states('weather.forecast_house_lenina') %}
-             {% if cond == "clear-night" %}Clear night
-             {% elif cond == 'cloudy' %}Cloudy
-             {% elif cond == 'fog' %}Fog
-             {% elif cond == 'hail' %}Hail
-             {% elif cond == 'lightning' %}Lightning
-             {% elif cond == 'lightning-rainy' %}Thunderstorms
-             {% elif cond == 'partlycloudy' %}Partly cloudy
-             {% elif cond == 'pouring' %}Pouring rain
-             {% elif cond == 'rainy' %}Rainy
-             {% elif cond == 'snowy' %}Snowy
-             {% elif cond == 'snowy-rainy' %}Snowy-rainy
-             {% elif cond == 'sunny' %}Sunny
-             {% elif cond == 'windy' %}Windy
-             {% elif cond == 'windy-variant' %}Windy
-             {% elif cond == 'exceptional' %}Exceptional
-             {% elif cond == 'unavailable' %}(not available)
+             {% if cond == "clear-night" %}ясная ночь
+             {% elif cond == 'cloudy' %}облачно
+             {% elif cond == 'fog' %}туман
+             {% elif cond == 'hail' %}град
+             {% elif cond == 'lightning' %}молния
+             {% elif cond == 'lightning-rainy' %}гроза
+             {% elif cond == 'partlycloudy' %}переменная облачность
+             {% elif cond == 'pouring' %}ливень
+             {% elif cond == 'rainy' %}дождь
+             {% elif cond == 'snowy' %}снег
+             {% elif cond == 'snowy-rainy' %}снег с дождём
+             {% elif cond == 'sunny' %}солнечно
+             {% elif cond == 'windy' %}ветрено
+             {% elif cond == 'windy-variant' %}ветрено
+             {% elif cond == 'exceptional' %}необычные условия
+             {% elif cond == 'unavailable' %}нет данных
              {% else %}{{ cond }}{% endif %}
+             
+      # ============================================================
+      # ДОПОЛНИТЕЛЬНЫЕ ДАННЫЕ ТЕКУЩЕЙ ПОГОДЫ
+      # ============================================================
 
-      # Таб-переключатель (без изменений)
-      - obj: "p2b10"
-        event:
-          "changed":
-            - service: openhasp.command
-              target:
-                entity_id: openhasp.plate1
-              data:
-                keyword: p2b10.text
-                parameters: >
-                  {% if val == 0 %}
-                  {{ "#000000 \u2022# #909090 \u2022#" | e }}
-                  {%-elif val == 1 %}
-                  {{ "#909090 \u2022# #000000 \u2022#" | e }}
-                  {% endif %}
-
-      # ======== ПОЧАСОВОЙ ПРОГНОЗ ========
-
-      - obj: "p2b21" # +1 час
+      - obj: "p2b18"
         properties:
           "text": >
-            {% set event = as_timestamp(strptime(state_attr('weather.forecast_house_lenina','forecast')[1]['datetime'], '%Y-%m-%dT%H:%M:%S%z')) %}
-            {{ event | timestamp_custom("%-I %p") }}
+            {{ '\uE58C' }} {{ state_attr('sensor.openhasp_weather_daily', 'forecast')[0]['precipitation'] | float | round(1) }} мм
 
-      - obj: "p2b22"
-        properties:
-          "text": "{{ state_attr('weather.forecast_house_lenina','forecast')[1]['temperature'] | round(1) }}°"
-
-      - obj: "p2b23"
-        properties:
-          "src": "/littlefs/w-32-{{ state_attr('weather.forecast_house_lenina','forecast')[1]['condition'] }}.png"
-
-      - obj: "p2b31" # +2 часа
+      - obj: "p2b19" # Направление ветра сегодня
         properties:
           "text": >
-            {% set event = as_timestamp(strptime(state_attr('weather.forecast_house_lenina','forecast')[3]['datetime'], '%Y-%m-%dT%H:%M:%S%z')) %}
-            {{ event | timestamp_custom("%-I %p") }}
+            {% set forecast = state_attr('sensor.openhasp_weather_daily', 'forecast')[0] %}
+            {% set bearing = forecast['wind_bearing'] | float %}
+            {% set directions = ['С', 'СВ', 'В', 'ЮВ', 'Ю', 'ЮЗ', 'З', 'СЗ'] %}
+            {{ '\uE59D' }} {{ directions[((bearing + 22.5) / 45) | int % 8] }}
+
+      - obj: "p2b20" # Скорость ветра сегодня
+        properties:
+          "text": >
+            {% set forecast = state_attr('sensor.openhasp_weather_daily', 'forecast')[0] %}
+            {{ forecast['wind_speed'] | float | round(1) }} м/с
+             
+      # ============================================================
+      # ПОСУТОЧНЫЙ ПРОГНОЗ
+      #
+      # [1] — завтра
+      # [2] — +2 дня
+      # [3] — +3 дня
+      # [4] — +4 дня
+      # [5] — +5 дней
+      #
+      # Погодные иконки теперь не PNG, а встроенные
+      # Material Design Icons openHASP.
+      # Размер glyph — 32 px.
+      # ============================================================
+
+
+      # ---------- ЗАВТРА ----------
+
+      - obj: "p2b31"
+        properties:
+          "text": "{{ state_attr('sensor.openhasp_weather_daily', 'weather_display')[1]['date'] }}"
 
       - obj: "p2b32"
         properties:
-          "text": "{{ state_attr('weather.forecast_house_lenina','forecast')[3]['temperature'] | round(1) }}°"
+          "text": "{{ state_attr('sensor.openhasp_weather_daily', 'weather_display')[1]['temperature'] }}°"
 
       - obj: "p2b33"
         properties:
-          "src": "/littlefs/w-32-{{ state_attr('weather.forecast_house_lenina','forecast')[3]['condition'] }}.png"
+          "text": "{{ state_attr('sensor.openhasp_weather_daily', 'weather_display')[1]['templow'] }}°"
 
-      - obj: "p2b41" # +4 часа
+      - obj: "p2b34"
         properties:
-          "text": >
-            {% set event = as_timestamp(strptime(state_attr('weather.forecast_house_lenina','forecast')[6]['datetime'], '%Y-%m-%dT%H:%M:%S%z')) %}
-            {{ event | timestamp_custom("%-I %p") }}
+          "text": "{{ state_attr('sensor.openhasp_weather_daily', 'weather_display')[1]['icon'] }}"
+          "text_color": "{{ state_attr('sensor.openhasp_weather_daily', 'weather_display')[1]['color'] }}"
+
+      # ---------- +2 ДНЯ ----------
+
+      - obj: "p2b41"
+        properties:
+          "text": "{{ state_attr('sensor.openhasp_weather_daily', 'weather_display')[2]['date'] }}"
 
       - obj: "p2b42"
         properties:
-          "text": "{{ state_attr('weather.forecast_house_lenina','forecast')[6]['temperature'] | round(1) }}°"
+          "text": "{{ state_attr('sensor.openhasp_weather_daily', 'weather_display')[2]['temperature'] }}°"
 
       - obj: "p2b43"
         properties:
-          "src": "/littlefs/w-32-{{ state_attr('weather.forecast_house_lenina','forecast')[6]['condition'] }}.png"
+          "text": "{{ state_attr('sensor.openhasp_weather_daily', 'weather_display')[2]['templow'] }}°"
 
-      - obj: "p2b51" # +8 часов
+      - obj: "p2b44"
         properties:
-          "text": >
-            {% set event = as_timestamp(strptime(state_attr('weather.forecast_house_lenina','forecast')[12]['datetime'], '%Y-%m-%dT%H:%M:%S%z')) %}
-            {{ event | timestamp_custom("%-I %p") }}
+          "text": "{{ state_attr('sensor.openhasp_weather_daily', 'weather_display')[2]['icon'] }}"
+          "text_color": "{{ state_attr('sensor.openhasp_weather_daily', 'weather_display')[2]['color'] }}"
+
+      # ---------- +3 ДНЯ ----------
+
+      - obj: "p2b51"
+        properties:
+          "text": "{{ state_attr('sensor.openhasp_weather_daily', 'weather_display')[3]['date'] }}"
 
       - obj: "p2b52"
         properties:
-          "text": "{{ state_attr('weather.forecast_house_lenina','forecast')[12]['temperature'] | round(1) }}°"
+          "text": "{{ state_attr('sensor.openhasp_weather_daily', 'weather_display')[3]['temperature'] }}°"
 
       - obj: "p2b53"
         properties:
-          "src": "/littlefs/w-32-{{ state_attr('weather.forecast_house_lenina','forecast')[12]['condition'] }}.png"
+          "text": "{{ state_attr('sensor.openhasp_weather_daily', 'weather_display')[3]['templow'] }}°"
 
-      # ======== ПОСУТОЧНЫЙ ПРОГНОЗ ========
-
-      - obj: "p2b61" # +1 день
+      - obj: "p2b54"
         properties:
-          "text": >
-            {% set event = as_timestamp(strptime(state_attr('weather.forecast_house_lenina','forecast')[0]['datetime'], '%Y-%m-%dT%H:%M:%S%z')) %}
-            {{ event | timestamp_custom("%A") }}
+          "text": "{{ state_attr('sensor.openhasp_weather_daily', 'weather_display')[3]['icon'] }}"
+          "text_color": "{{ state_attr('sensor.openhasp_weather_daily', 'weather_display')[3]['color'] }}"
+
+      # ---------- +4 ДНЯ ----------
+
+      - obj: "p2b61"
+        properties:
+          "text": "{{ state_attr('sensor.openhasp_weather_daily', 'weather_display')[4]['date'] }}"
 
       - obj: "p2b62"
         properties:
-          "text": "{{ state_attr('weather.forecast_house_lenina','forecast')[0]['temperature'] | round(1) }}° / {{ state_attr('weather.forecast_house_lenina','forecast')[0]['templow'] | round(1) }}°"
+          "text": "{{ state_attr('sensor.openhasp_weather_daily', 'weather_display')[4]['temperature'] }}°"
 
       - obj: "p2b63"
         properties:
-          "src": "/littlefs/w-32-{{ state_attr('weather.forecast_house_lenina','forecast')[0]['condition'] }}.png"
+          "text": "{{ state_attr('sensor.openhasp_weather_daily', 'weather_display')[4]['templow'] }}°"
 
+      - obj: "p2b64"
+        properties:
+          "text": "{{ state_attr('sensor.openhasp_weather_daily', 'weather_display')[4]['icon'] }}"
+          "text_color": "{{ state_attr('sensor.openhasp_weather_daily', 'weather_display')[4]['color'] }}"
+
+      # ---------- +5 ДНЕЙ ----------
+
+      - obj: "p2b71"
+        properties:
+          "text": "{{ state_attr('sensor.openhasp_weather_daily', 'weather_display')[5]['date'] }}"
+
+      - obj: "p2b72"
+        properties:
+          "text": "{{ state_attr('sensor.openhasp_weather_daily', 'weather_display')[5]['temperature'] }}°"
+
+      - obj: "p2b73"
+        properties:
+          "text": "{{ state_attr('sensor.openhasp_weather_daily', 'weather_display')[5]['templow'] }}°"
+
+      - obj: "p2b74"
+        properties:
+          "text": "{{ state_attr('sensor.openhasp_weather_daily', 'weather_display')[5]['icon'] }}"
+          "text_color": "{{ state_attr('sensor.openhasp_weather_daily', 'weather_display')[5]['color'] }}"
+
+      # ---------- ЭКРАН КОТЛА ----------             
       - obj: "p3b1"  # состояние горелки
         properties:
           "val": '{{ 1 if is_state("binary_sensor.boiler_gorelka", "on") else 0 }}'
@@ -298,5 +350,39 @@
           "down":
             - service: button.press
               entity_id: button.domofon_reject_call
+
+      # ============================================================
+      # СТРАНИЦА 5 — СВЕТ В ГОСТИНОЙ
+      # ============================================================
+
+      # Главный свет в гостиной
+      - obj: "p5b1"
+        properties:
+          "val": '{{ 1 if is_state("switch.livingroom_relay", "on") else 0 }}'
+          "text": "\uE769"
+        event:
+          "up":
+            - service: homeassistant.toggle
+              entity_id: "switch.livingroom_relay"
+
+      # Торшер
+      - obj: "p5b2"
+        properties:
+          "val": '{{ 1 if is_state("light.torsher_lamp", "on") else 0 }}'
+          "text": "\uE8DD"
+        event:
+          "up":
+            - service: homeassistant.toggle
+              entity_id: "light.torsher_lamp"
+
+      # Подсветка кухни
+      - obj: "p5b3"
+        properties:
+          "val": '{{ 1 if is_state("switch.kitchen_led_relay", "on") else 0 }}'
+          "text": "\uF1E1"
+        event:
+          "up":
+            - service: homeassistant.toggle
+              entity_id: "switch.kitchen_led_relay"
 
 
