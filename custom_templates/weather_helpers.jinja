@@ -1,0 +1,79 @@
+{% macro icon(condition) %}
+{% set icons = {
+  'clear-night': '\uE594',
+  'cloudy': '\uE590',
+  'fog': '\uE591',
+  'hail': '\uE592',
+  'lightning': '\uE593',
+  'lightning-rainy': '\uE67E',
+  'partlycloudy': '\uE595',
+  'pouring': '\uE596',
+  'rainy': '\uE597',
+  'snowy': '\uE598',
+  'snowy-rainy': '\uE67F',
+  'sunny': '\uE599',
+  'windy': '\uE59D',
+  'windy-variant': '\uE59E'
+} %}
+{{ icons.get(condition, '\uE026') }}
+{% endmacro %}
+
+
+{% macro color(condition) %}
+{% set colors = {
+  'sunny': '#FFD43B',
+  'clear-night': '#8AB4F8',
+  'cloudy': '#B8C4CE',
+  'fog': '#A7B4BD',
+  'hail': '#80DEEA',
+  'lightning': '#FFCA28',
+  'lightning-rainy': '#B388FF',
+  'partlycloudy': '#B8D4F0',
+  'pouring': '#2196F3',
+  'rainy': '#42A5F5',
+  'snowy': '#D6F3FF',
+  'snowy-rainy': '#90CAF9',
+  'windy': '#64B5F6',
+  'windy-variant': '#64B5F6',
+  'exceptional': '#FF9800'
+} %}
+{{ colors.get(condition, '#78909C') }}
+{% endmacro %}
+
+
+{% macro wind_dir(bearing) %}
+{% set directions = [
+  'С', 'СВ', 'В', 'ЮВ',
+  'Ю', 'ЮЗ', 'З', 'СЗ'
+] %}
+{{ directions[((bearing | float(0) + 22.5) / 45) | int % 8] }}
+{% endmacro %}
+
+
+{% macro wind_arrow(direction) %}
+{% set arrows = {
+  'С': [[14,5],[14,23],[8,17],[14,23],[20,17]],
+  'СВ': [[23,7],[9,21],[15,21],[9,21],[9,15]],
+  'В': [[23,14],[5,14],[11,8],[5,14],[11,20]],
+  'ЮВ': [[19,7],[5,21],[5,15],[5,21],[11,21]],
+  'Ю': [[14,23],[14,5],[8,11],[14,5],[20,11]],
+  'ЮЗ': [[5,21],[19,7],[13,7],[19,7],[19,13]],
+  'З': [[5,14],[23,14],[17,8],[23,14],[17,20]],
+  'СЗ': [[5,7],[19,21],[13,21],[19,21],[19,15]]
+} %}
+{{ arrows.get(direction, [[14,5],[14,23],[8,17],[14,23],[20,17]]) }}
+{% endmacro %}
+
+
+{% macro day_name(weekday) %}
+{% set days = {
+  0: 'ПН',
+  1: 'ВТ',
+  2: 'СР',
+  3: 'ЧТ',
+  4: 'ПТ',
+  5: 'СБ',
+  6: 'ВС'
+} %}
+{{ days.get(weekday, '') }}
+{% endmacro %}

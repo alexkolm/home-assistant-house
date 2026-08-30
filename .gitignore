@@ -8,6 +8,9 @@
 # ==================================================
 !/*.yaml
 !/pages.jsonl
+!/custom_templates/
+!/custom_templates/weather_helpers.jinja
+
 # ==================================================
 # Explicitly keep .gitignore itself
 # ==================================================

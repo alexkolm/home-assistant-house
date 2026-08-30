@@ -3,26 +3,38 @@
       - obj: "p0b1"  # time label on all pages
         properties:
           "text": '{{ now().strftime("%H:%M") }}'
-      - obj: "p1b2"  # light-switch toggle button
+          
+      # ============================================================
+      # СТРАНИЦА 1 — СВЕТ
+      # ============================================================
+
+      # Главный свет в гостиной
+      - obj: "p1b1"
         properties:
-          "val": '{{ 1 if states("light.torsher_lamp") == "on" else 0 }}'
-          "text": '{{ "\uE6E8" if is_state("light.torsher_lamp", "on") else "\uE335" | e }}'
+          "val": '{{ 1 if is_state("switch.livingroom_relay", "on") else 0 }}'
+        event:
+          "up":
+            - service: homeassistant.toggle
+              entity_id: "switch.livingroom_relay"
+
+      # Торшер
+      - obj: "p1b2"
+        properties:
+          "val": '{{ 1 if is_state("light.torsher_lamp", "on") else 0 }}'
         event:
           "up":
             - service: homeassistant.toggle
               entity_id: "light.torsher_lamp"
-      - obj: "p1b3"  # dropdown
-        event:
-          "changed":
-            - service: notify.me
-              data:
-                message: |
-                  🍎 Выбран фрукт: {{ text }}
-                  🕒 Время: {{ now().strftime('%H:%M %d.%m.%Y') }}
-                  📱 С панели openHASP
-      - obj: "p1b4"  # temperature
+
+      # Подсветка кухни
+      - obj: "p1b3"
         properties:
-          "text": '{{ states("sensor.livingroom_sensor_temperature") }}°C'
+          "val": '{{ 1 if is_state("switch.kitchen_led_relay", "on") else 0 }}'
+        event:
+          "up":
+            - service: homeassistant.toggle
+              entity_id: "switch.kitchen_led_relay"
+
       - obj: "p2b8"  # humidity
         properties:
           "text": >
@@ -120,7 +132,17 @@
         properties:
           "text": >
             {{ state_attr('sensor.openhasp_weather_daily', 'weather_display')[0]['wind_speed'] }} м/с
-             
+
+      - obj: "p2b9"
+        properties:
+          "text": >
+            {{ '\uEF30' }} {{ '\uE05D' }} {{ states('sensor.next_sunrise') }}
+    
+      - obj: "p2b10"
+        properties:
+          "text": >
+            {{ '\uEF30' }} {{ '\uE045' }} {{ states('sensor.next_sunset') }}
+
       # ============================================================
       # ПОСУТОЧНЫЙ ПРОГНОЗ
       #
@@ -243,20 +265,20 @@
           "text": >
             {% set temp = states("sensor.livingroom_sensor_temperature") %}
             {% if temp != "unavailable" and temp != "unknown" %}
-            t гостиной: {{ temp | float | round(1) }}°C
+            Гостиная: {{ temp | float | round(1) }}°C
             {% else %}
-            t гостиной: Н/Д
+            Гостиная: Н/Д
             {% endif %}
       - obj: "p3b3"  # temperature спальни
         properties:
           "text": >
             {% set temp = states("sensor.bedroom_sensor_temperature") %}
             {% if temp != "unavailable" and temp != "unknown" %}
-            t спальни: {{ temp | float | round(1) }}°C
+            Спальня: {{ temp | float | round(1) }}°C
             {% else %}
-            t спальни: Н/Д
+            Спальня: Н/Д
             {% endif %}
-      - obj: "p3b4"  # temperature целевая
+      - obj: "p3b4"  # Целевая температура
         properties:
           "text": >
             {% set temp = state_attr('climate.livingroom_thermostat', 'temperature') %}
@@ -265,14 +287,20 @@
             {% else %}
             Н/Д
             {% endif %}
+          "text_color": >
+            {% if is_state('climate.livingroom_thermostat', 'heat') %}
+            #FF3B30
+            {% else %}
+            #66CCFF
+            {% endif %}
       - obj: "p3b5"  # temperature теплоносителя
         properties:
           "text": >
             {% set temp = states("sensor.boiler_temperatura_teplonositelia") %}
             {% if temp != "unavailable" and temp != "unknown" %}
-            t теплоносителя: {{ temp | float | round(1) }}°C
+            Теплоноситель: {{ temp | float | round(1) }}°C
             {% else %}
-            t теплоносителя: Н/Д
+            Теплоноситель: Н/Д
             {% endif %}
       - obj: "p3b6"  # счетчик тактов горелки за предыдущий час
         properties:
@@ -346,39 +374,3 @@
           "down":
             - service: button.press
               entity_id: button.domofon_reject_call
-
-      # ============================================================
-      # СТРАНИЦА 5 — СВЕТ В ГОСТИНОЙ
-      # ============================================================
-
-      # Главный свет в гостиной
-      - obj: "p5b1"
-        properties:
-          "val": '{{ 1 if is_state("switch.livingroom_relay", "on") else 0 }}'
-          "text": "\uE769"
-        event:
-          "up":
-            - service: homeassistant.toggle
-              entity_id: "switch.livingroom_relay"
-
-      # Торшер
-      - obj: "p5b2"
-        properties:
-          "val": '{{ 1 if is_state("light.torsher_lamp", "on") else 0 }}'
-          "text": "\uE8DD"
-        event:
-          "up":
-            - service: homeassistant.toggle
-              entity_id: "light.torsher_lamp"
-
-      # Подсветка кухни
-      - obj: "p5b3"
-        properties:
-          "val": '{{ 1 if is_state("switch.kitchen_led_relay", "on") else 0 }}'
-          "text": "\uF1E1"
-        event:
-          "up":
-            - service: homeassistant.toggle
-              entity_id: "switch.kitchen_led_relay"
-
-
