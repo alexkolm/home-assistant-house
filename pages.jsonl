@@ -849,3 +849,25 @@
   "auto_size":0,"y_invert":0,
   "line_color":"#66CCFF","line_width":3,"line_rounded":1
 }
+{
+  "page":6, "id":90, "obj":"btn",
+  "text":"Графики погоды (прогноз)","text_font":22,
+  "bg_color":"#2C3E50","text_color":"#FFFFFF",
+  "radius":0,"border_side":0,
+  "x":0,"y":0,"w":480,"h":40
+}
+{
+  "page":6, "id":20, "obj":"obj","click":0,
+  "bg_color":"#3A3F44","radius":0,"border_side":0,
+  "x":5,"y":40,"w":470,"h":410
+}
+{
+  "page":6, "id":1, "obj":"img","src":"",
+  "auto_size":1,"parentid":20,
+  "x":0,"y":5,"w":470,"h":200
+}
+{
+  "page":6, "id":2, "obj":"img","src":"",
+  "auto_size":1,"parentid":20,
+  "x":0,"y":210,"w":470,"h":195
+}

@@ -1,3 +1,124 @@
+- id: panel_weather_charts
+  alias: Отображение графиков погоды
+
+  triggers:
+    # Перешли на страницу 6
+    - trigger: state
+      entity_id: number.plate1_page_number
+      to: '6'
+
+    # Панель проснулась и включила подсветку
+    - trigger: state
+      entity_id: light.plate1_backlight
+      to: 'on'
+
+  conditions:
+    # Загружаем графики только если сейчас действительно страница 6
+    - condition: state
+      entity_id: number.plate1_page_number
+      state: '6'
+
+  actions:
+    - action: openhasp.push_image
+      continue_on_error: true
+      target:
+        entity_id: openhasp.plate1
+      data:
+        obj: p6b1
+        image: http://192.168.0.101/weather/temperature.jpg
+        width: 470
+        height: 200
+
+    - action: openhasp.push_image
+      continue_on_error: true
+      target:
+        entity_id: openhasp.plate1
+      data:
+        obj: p6b2
+        image: http://192.168.0.101/weather/precipitation.jpg
+        width: 470
+        height: 200
+
+  mode: single
+- id: openhasp_weather_daily
+  alias: Обновление посуточной погоды на панели plate1
+  mode: restart
+
+  trigger:
+    # Обновился сенсор с прогнозом
+    - platform: state
+      entity_id: sensor.openhasp_weather_daily
+
+    # Панель снова подключилась к MQTT
+    - platform: mqtt
+      topic: hasp/plate1/LWT
+      payload: "online"
+
+  action:
+    - repeat:
+        count: 5
+
+        sequence:
+          - variables:
+              i: "{{ repeat.index }}"
+              base: "{{ 31 + (repeat.index - 1) * 10 }}"
+              item: >
+                {{ state_attr(
+                  'sensor.openhasp_weather_daily',
+                  'weather_display'
+                )[repeat.index] }}
+
+          # ========================================================
+          # ДАТА
+          # p2b31 / 41 / 51 / 61 / 71
+          # ========================================================
+
+          - service: mqtt.publish
+            data:
+              topic: "hasp/plate1/command/p2b{{ base }}.text"
+              payload: >
+                  {{ item.date | replace('\n', ' ') | regex_replace('\s+', ' ') | trim }}
+
+          # ========================================================
+          # МАКСИМАЛЬНАЯ ТЕМПЕРАТУРА
+          # p2b32 / 42 / 52 / 62 / 72
+          # ========================================================
+
+          - service: mqtt.publish
+            data:
+              topic: "hasp/plate1/command/p2b{{ base + 1 }}.text"
+              payload: >
+                {{ item.temperature | float(0) | round(1) }}°
+
+          # ========================================================
+          # МИНИМАЛЬНАЯ ТЕМПЕРАТУРА
+          # p2b33 / 43 / 53 / 63 / 73
+          # ========================================================
+
+          - service: mqtt.publish
+            data:
+              topic: "hasp/plate1/command/p2b{{ base + 2 }}.text"
+              payload: >
+                {{ item.templow | float(0) | round(1) }}°
+
+          # ========================================================
+          # ИКОНКА + ЦВЕТ
+          # p2b34 / 44 / 54 / 64 / 74
+          #
+          # Unicode-иконки отправляем через jsonl.
+          # ========================================================
+
+          - service: mqtt.publish
+            data:
+              topic: hasp/plate1/command/jsonl
+              payload: >
+                {{ {
+                  'page': 2,
+                  'id': base + 3,
+                  'text': item.icon | trim,
+                  'text_color': item.color | trim
+                } | to_json }}
+
 - id: openhasp_weather_hourly
   alias: Обновление почасовой погоды на панели plate1
   mode: restart
