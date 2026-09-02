@@ -47,6 +47,8 @@ views:
         name: SmartTherm (192.168.0.212)
       - entity: binary_sensor.192_168_0_50
         name: ZigBee роутер (192.168.0.50)
+      - entity: binary_sensor.192_168_0_185
+        name: Часы Awtrix (192.168.0.185)
       title: Устройства в сети
 
     - type: entities

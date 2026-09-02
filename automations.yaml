@@ -599,7 +599,10 @@
   
 - id: gas_boiler_watchdog
   alias: Watchdog для газового котла
-  description: Перезапуск контроллера котла при потере пинга и уведомление
+  description: >
+    При потере связи с SmartTherm на 5 минут проверяем, не легла ли
+    сеть целиком. Если сеть жива — до 3 раз перезапускаем питание
+    контроллера с проверкой результата после каждой попытки.
   trigger:
     - platform: state
       entity_id: binary_sensor.gas_ping
@@ -607,17 +610,91 @@
       for: '00:05:00'
   condition: []
   action:
-    - service: switch.turn_off
-      target:
-        entity_id: switch.gas_usb
-    - delay:
-        seconds: 5
-    - service: switch.turn_on
-      target:
-        entity_id: switch.gas_usb
+    - choose:
+        # Похоже, легла вся сеть, а не конкретно контроллер котла —
+        # перезапуск питания тут не поможет и может лишь навредить
+        - conditions:
+            - condition: state
+              entity_id: binary_sensor.192_168_0_185
+              state: 'off'
+          sequence:
+            - service: logbook.log
+              data:
+                name: "Watchdog котла"
+                message: "Рестарт пропущен: похоже, недоступна вся сеть, а не контроллер"
+            - service: notify.me
+              data:
+                message: >
+                  ⚠️ Связь с котлом (SmartTherm, 192.168.0.212) потеряна,
+                  но заодно недоступны и часы Awtrix — похоже, легла
+                  вся сеть. Перезапуск контроллера не выполняю, проверь
+                  роутер/Wi-Fi.
+      default:
+        - repeat:
+            count: 3
+            sequence:
+              - service: logbook.log
+                data:
+                  name: "Watchdog котла"
+                  message: "Попытка перезапуска питания №{{ repeat.index }}"
+
+              - service: switch.turn_off
+                target:
+                  entity_id: switch.gas_usb
+              - delay:
+                  seconds: 10
+              - service: switch.turn_on
+                target:
+                  entity_id: switch.gas_usb
+
+              # даём контроллеру время на полную загрузку и коннект к MQTT
+              - delay:
+                  seconds: 90
+
+              - if:
+                  - condition: state
+                    entity_id: binary_sensor.gas_ping
+                    state: 'on'
+                then:
+                  - service: notify.me
+                    data:
+                      message: >
+                        ✅ Контроллер газового котла снова на связи после
+                        перезапуска (попытка {{ repeat.index }} из 3).
+                  - stop: "Связь восстановлена, дальнейшие попытки не нужны"
+
+        # сюда попадаем только если все 3 попытки не дали результата
+        - service: notify.me
+          data:
+            message: >
+              🔴 3 попытки перезапустить контроллер газового котла
+              (SmartTherm, 192.168.0.212) не помогли. Автоматика больше
+              не долбит реле — нужна ручная проверка.
+        - service: logbook.log
+          data:
+            name: "Watchdog котла"
+            message: "Эскалация: 3 неудачные попытки перезапуска подряд"
+  mode: single
+
+- id: gas_boiler_recovered
+  alias: Котел — связь восстановлена
+  description: Уведомление, когда связь с SmartTherm вернулась после простоя
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.gas_ping
+      from: 'off'
+      to: 'on'
+  condition:
+    # уведомляем только если простой был ощутимым, а не микроскачок на секунду
+    - condition: template
+      value_template: >
+        {{ (as_timestamp(now()) - as_timestamp(trigger.from_state.last_changed)) > 300 }}
+  action:
     - service: notify.me
       data:
-        message: "Контроллер газового котла перезапущен (SmartTherm, 192.168.0.212)"
+        message: >
+          🟢 Связь с контроллером газового котла восстановлена.
+          Отсутствовал {{ ((as_timestamp(now()) - as_timestamp(trigger.from_state.last_changed)) / 60) | round(1) }} мин.
   mode: single
 
 - id: hasp_thermostat_temp_adjust
@@ -1155,90 +1232,6 @@
             - service: shell_command.delete_domofon_video
               continue_on_error: true
               
-- id: boiler_off
-  alias: Отключение отопления
-  triggers:
-  - trigger: numeric_state
-    entity_id:
-    - sensor.livingroom_sensor_temperature
-    above: 18
-  conditions:
-  - condition: state
-    entity_id: input_boolean.notify_boiler
-    state: 'on'
-  - condition: state
-    entity_id: switch.boiler_relay
-    state: 'on'
-  actions:
-  - data:
-      entity_id: switch.boiler_relay
-    action: switch.turn_off
-  - data:
-      message: Температура повысилась, электрокотел отключен
-    action: notify.me
-  mode: single
-- id: boiler_on
-  alias: Включение отопления
-  triggers:
-  - trigger: numeric_state
-    entity_id:
-    - sensor.livingroom_sensor_temperature
-    below: 16
-  conditions:
-  - condition: state
-    entity_id: input_boolean.notify_boiler
-    state: 'on'
-  - condition: state
-    entity_id: switch.boiler_relay
-    state: 'off'
-  actions:
-  - data:
-      entity_id: switch.boiler_relay
-    action: switch.turn_on
-  - data:
-      message: Температура снизилась, запущен электрокотел
-    action: notify.me
-  mode: single
-- id: pump_off
-  alias: Выключение насоса после 15 минут бездействия электрокотла
-  trigger:
-  - platform: numeric_state
-    entity_id:
-    - sensor.boiler_relay_power
-    below: 100
-    for:
-      hours: 0
-      minutes: 15
-      seconds: 0
-  condition:
-  - condition: state
-    entity_id: switch.pump_plug
-    state: 'on'
-  action:
-  - service: switch.turn_off
-    data:
-      entity_id: switch.pump_plug
-  - service: notify.me
-    data:
-      message: Насос выключен после 15 минут бездействия электрокотла
-- id: pump_on
-  alias: Включение насоса при запуске электрокотла
-  trigger:
-  - platform: numeric_state
-    entity_id:
-    - sensor.boiler_relay_power
-    above: 100
-  condition:
-  - condition: state
-    entity_id: switch.pump_plug
-    state: 'off'
-  action:
-  - service: switch.turn_on
-    data:
-      entity_id: switch.pump_plug
-  - service: notify.me
-    data:
-      message: Насос запущен после включения электрокотла
 - id: total_info
   alias: Уведомление о потреблении ежесуточно
   trigger:
