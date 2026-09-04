@@ -465,8 +465,6 @@ sensor:
     max_age:
       hours: 24
 
-automation:
-  - !include automations.yaml
-  - !include heating.yaml
+automation: !include_dir_merge_list automations/
 script: !include scripts.yaml
 scene: !include scenes.yaml

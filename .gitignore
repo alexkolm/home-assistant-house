@@ -12,6 +12,12 @@
 !/custom_templates/weather_helpers.jinja
 
 # ==================================================
+# Allow automation YAML files
+# ==================================================
+!/automations/
+!/automations/*.yaml
+
+# ==================================================
 # Explicitly keep .gitignore itself
 # ==================================================
 !.gitignore
