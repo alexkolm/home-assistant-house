@@ -1,23 +1,16 @@
 - id: panel_weather_charts
   alias: Отображение графиков погоды
-
   triggers:
-    # Перешли на страницу 6
     - trigger: state
       entity_id: number.plate1_page_number
       to: '6'
-
-    # Панель проснулась и включила подсветку
     - trigger: state
       entity_id: light.plate1_backlight
       to: 'on'
-
   conditions:
-    # Загружаем графики только если сейчас действительно страница 6
     - condition: state
       entity_id: number.plate1_page_number
       state: '6'
-
   actions:
     - action: openhasp.push_image
       continue_on_error: true
@@ -28,7 +21,6 @@
         image: http://192.168.0.101/weather/temperature.jpg
         width: 470
         height: 200
-
     - action: openhasp.push_image
       continue_on_error: true
       target:
@@ -38,26 +30,20 @@
         image: http://192.168.0.101/weather/precipitation.jpg
         width: 470
         height: 200
-
   mode: single
+
 - id: openhasp_weather_daily
   alias: Обновление посуточной погоды на панели plate1
   mode: restart
-
   trigger:
-    # Обновился сенсор с прогнозом
     - platform: state
       entity_id: sensor.openhasp_weather_daily
-
-    # Панель снова подключилась к MQTT
     - platform: mqtt
       topic: hasp/plate1/LWT
       payload: "online"
-
   action:
     - repeat:
         count: 5
-
         sequence:
           - variables:
               i: "{{ repeat.index }}"
@@ -67,47 +53,21 @@
                   'sensor.openhasp_weather_daily',
                   'weather_display'
                 )[repeat.index] }}
-
-          # ========================================================
-          # ДАТА
-          # p2b31 / 41 / 51 / 61 / 71
-          # ========================================================
-
           - service: mqtt.publish
             data:
               topic: "hasp/plate1/command/p2b{{ base }}.text"
               payload: >
                   {{ item.date | replace('\n', ' ') | regex_replace('\s+', ' ') | trim }}
-
-          # ========================================================
-          # МАКСИМАЛЬНАЯ ТЕМПЕРАТУРА
-          # p2b32 / 42 / 52 / 62 / 72
-          # ========================================================
-
           - service: mqtt.publish
             data:
               topic: "hasp/plate1/command/p2b{{ base + 1 }}.text"
               payload: >
                 {{ item.temperature | float(0) | round(1) }}°
-
-          # ========================================================
-          # МИНИМАЛЬНАЯ ТЕМПЕРАТУРА
-          # p2b33 / 43 / 53 / 63 / 73
-          # ========================================================
-
           - service: mqtt.publish
             data:
               topic: "hasp/plate1/command/p2b{{ base + 2 }}.text"
               payload: >
                 {{ item.templow | float(0) | round(1) }}°
-
-          # ========================================================
-          # ИКОНКА + ЦВЕТ
-          # p2b34 / 44 / 54 / 64 / 74
-          #
-          # Unicode-иконки отправляем через jsonl.
-          # ========================================================
-
           - service: mqtt.publish
             data:
               topic: hasp/plate1/command/jsonl
@@ -122,18 +82,13 @@
 - id: openhasp_weather_hourly
   alias: Обновление почасовой погоды на панели plate1
   mode: restart
-
   trigger:
-    # Обновился прогноз
     - platform: state
       entity_id: sensor.openhasp_weather_daily
       attribute: weather_hourly_display
-
-    # Панель plate1 снова подключилась к MQTT
     - platform: mqtt
       topic: hasp/plate1/LWT
       payload: "online"
-
   action:
     - repeat:
         count: 12
@@ -145,11 +100,6 @@
                   'sensor.openhasp_weather_daily',
                   'weather_hourly_display'
                 )[repeat.index - 1] }}
-
-          # ========================================================
-          # ИКОНКА + ЦВЕТ
-          # ========================================================
-
           - service: mqtt.publish
             data:
               topic: "hasp/plate1/command/jsonl"
@@ -160,74 +110,36 @@
                   'text': item.icon | trim,
                   'text_color': item.color | trim
                 } | to_json }}
-                
-          # ========================================================
-          # МАЛЫЙ СТОЛБЕЦ ОСАДКОВ
-          # ========================================================
-
           - service: mqtt.publish
             data:
               topic: "hasp/plate1/command/p5b{{ 30 + i }}.hidden"
               payload: >
                 {{ '1' if item.precipitation | float(0) == 0 else '0' }}
-
-          # ========================================================
-          # БОЛЬШОЙ СТОЛБЕЦ ОСАДКОВ
-          # ========================================================
-
           - service: mqtt.publish
             data:
               topic: "hasp/plate1/command/p5b{{ 50 + i }}.hidden"
               payload: >
                 {{ '1' if item.precipitation | float(0) <= 1 else '0' }}
-
-          # ========================================================
-          # КОЛИЧЕСТВО ОСАДКОВ
-          # ========================================================
-
           - service: mqtt.publish
             data:
               topic: "hasp/plate1/command/p5b{{ 70 + i }}.text"
               payload: >
                 {{ item.precipitation | float(0) | round(1) }}
-
-          # ========================================================
-          # ТЕМПЕРАТУРА
-          #
-          # id 90 занят заголовком "Погода детально".
-          # Поэтому температура: 91..102
-          # ========================================================
-
           - service: mqtt.publish
             data:
               topic: "hasp/plate1/command/p5b{{ 91 + i }}.text"
               payload: >
                 {{ item.temperature | float(0) | round(1) }}
-
-          # ========================================================
-          # НАПРАВЛЕНИЕ ВЕТРА
-          # ========================================================
-
           - service: mqtt.publish
             data:
               topic: "hasp/plate1/command/p5b{{ 110 + i }}.text"
               payload: >
                 {{ item.wind_direction }}
-
-          # ========================================================
-          # СКОРОСТЬ ВЕТРА
-          # ========================================================
-
           - service: mqtt.publish
             data:
               topic: "hasp/plate1/command/p5b{{ 130 + i }}.text"
               payload: >
                 {{ item.wind_speed | float(0) | round(1) }}
-
-          # ========================================================
-          # СТРЕЛКА ВЕТРА
-          # ========================================================
-
           - service: mqtt.publish
             data:
               topic: "hasp/plate1/command/jsonl"
@@ -238,21 +150,16 @@
                   'id': 150 + i,
                   'points': wx.wind_arrow(item.wind_direction | trim)
                 } | to_json }}
-                
+
 - id: awtrix_right_button_wled
   alias: AWTRIX — правая кнопка — подсветка под кроватью
   mode: single
-
   trigger:
     - platform: state
       entity_id: binary_sensor.awtrix_1ed68c_button_right
       to: "on"
-
   action:
     - choose:
-
-        # Розетка выключена → включаем питание,
-        # ждём загрузки WLED и запускаем BlueWave
         - conditions:
             - condition: state
               entity_id: switch.wled_plug
@@ -261,14 +168,9 @@
             - service: switch.turn_on
               target:
                 entity_id: switch.wled_plug
-
             - delay:
                 seconds: 3
-
             - service: rest_command.wled_preset_2
-
-        # Розетка включена, но WLED выключен (Preset 1)
-        # → запускаем BlueWave
         - conditions:
             - condition: state
               entity_id: switch.wled_plug
@@ -278,9 +180,6 @@
               state: "off"
           sequence:
             - service: rest_command.wled_preset_2
-
-        # Розетка включена и WLED светит (Preset 2)
-        # → переводим в LightOFF, розетку НЕ выключаем
         - conditions:
             - condition: state
               entity_id: switch.wled_plug
@@ -294,24 +193,17 @@
 - id: button_door_open
   alias: Домофон — открыть с кнопки (Zigbee)
   mode: single
-
   trigger:
     - platform: mqtt
       topic: "zigbee2mqtt_poe/button_door/action"
       payload: "single"
-
   condition: []
-
   action:
     - parallel:
-
-        # Открытие замка
         - sequence:
             - service: switch.turn_on
               target:
                 entity_id: switch.domofon_door_rest
-
-        # Озвучка
         - sequence:
             - service: media_player.play_media
               continue_on_error: true
@@ -323,55 +215,20 @@
                 extra:
                   volume_level: 0.7
 
-- id: boiler_temp_limit
-  alias: Ограничение температуры котла
-  mode: single
-  trigger:
-    - platform: numeric_state
-      entity_id: climate.boiler_kotel
-      attribute: temperature
-      above: 70
-
-  action:
-  # Устанавливаем обратно 70
-    - service: climate.set_temperature
-      target:
-        entity_id: climate.boiler_kotel
-      data:
-        temperature: 70
-
-  # Запись в лог HA
-    - service: logbook.log
-      data:
-        name: "Котёл"
-        message: "Автоматизация ограничила температуру до 70°C"
-        entity_id: climate.boiler_kotel
-
-    # Оповещение в Telegram
-    - service: notify.me
-      data:
-        message: "Ограничиваем максимальную температуру котла автоматизацией"
-
 - id: bedroom_presence_detected
   alias: Спальня - обнаружено присутствие
   trigger:
     - platform: state
       entity_id: binary_sensor.human_sensor_bedroom_presence
       to: "on"
-
   action:
-    # Включаем виртуальное присутствие
     - service: input_boolean.turn_on
       target:
         entity_id: input_boolean.bedroom_presence_state
-
-    # Сбрасываем таймер выключения
     - service: timer.cancel
       target:
         entity_id: timer.bedroom_presence_off_delay
-
   mode: restart
-
 
 - id: bedroom_presence_lost
   alias: Спальня - датчик потерял присутствие
@@ -379,15 +236,11 @@
     - platform: state
       entity_id: binary_sensor.human_sensor_bedroom_presence
       to: "off"
-
   action:
-    # Запускаем таймер отсутствия
     - service: timer.start
       target:
         entity_id: timer.bedroom_presence_off_delay
-
   mode: restart
-
 
 - id: bedroom_presence_timeout
   alias: Спальня - виртуальное присутствие выключено по таймеру
@@ -396,12 +249,10 @@
       event_type: timer.finished
       event_data:
         entity_id: timer.bedroom_presence_off_delay
-
   action:
     - service: input_boolean.turn_off
       target:
         entity_id: input_boolean.bedroom_presence_state
-
   mode: single
 
 - id: away_script
@@ -420,17 +271,12 @@
 
 - id: faraway
   alias: Включение режима, когда уезжаем из дома надолго
-
   trigger:
     - platform: state
       entity_id: input_boolean.notify_away_home
       to: "on"
-
   condition: []
-
   action:
-
-    # сообщение на колонку
     - service: media_player.play_media
       continue_on_error: true
       target:
@@ -440,57 +286,41 @@
         media_content_type: text
         extra:
           volume_level: 0.7
-
-    # оповещение в телеграм
     - service: notify.me
       continue_on_error: true
       data:
         message: "Скрипт 'Уехали надолго' запущен"
-
-    # отключаем бойлер
     - service: switch.turn_off
       target:
         entity_id: switch.boiler_plug
-
-    # перезапуск питания теплого пола и полотенцесушителя
     - service: switch.turn_off
       target:
         entity_id:
           - switch.main_floor_relay
           - switch.towel_dryer_plug
-
     - delay: "00:00:05"
-
     - service: switch.turn_on
       target:
         entity_id:
           - switch.main_floor_relay
           - switch.towel_dryer_plug
-
-    # Работа с термостатом ТОЛЬКО если он в режиме heat
     - choose:
         - conditions:
             - condition: state
               entity_id: climate.livingroom_thermostat
               state: "heat"
-
           sequence:
-
-            # отключаем режим день/ночь
             - service: input_boolean.turn_off
               target:
                 entity_id: input_boolean.climate_daily
-
-            # ставим away
             - service: climate.set_preset_mode
               continue_on_error: true
               target:
                 entity_id: climate.livingroom_thermostat
               data:
                 preset_mode: "away"
-
   mode: single
-  
+
 - id: notify_offline_restore_after_48h
   alias: Restore notify_offline after 48h
   mode: restart
@@ -498,77 +328,11 @@
     - platform: state
       entity_id: input_boolean.notify_offline
       to: "off"
-
   action:
     - delay: "48:00:00"
-
     - service: input_boolean.turn_on
       target:
         entity_id: input_boolean.notify_offline
-        
-- id: boiler_control_by_thermostat
-  alias: 'Управление газовым котлом по термостату'
-  trigger:
-    # реагируем на смену состояния и действия термостата
-    - platform: state
-      entity_id: climate.livingroom_thermostat
-      attribute: hvac_action
-    - platform: state
-      entity_id: climate.livingroom_thermostat
-      to:
-        - 'off'
-        - 'heat'
-
-  action:
-    - delay: 2  # 🕐 короткая задержка, чтобы hvac_action успел обновиться
-
-    - choose:
-
-        # 🟢 Если термостат в режиме "heat" и реально греет
-        - conditions:
-            - condition: state
-              entity_id: climate.livingroom_thermostat
-              state: 'heat'
-            - condition: state
-              entity_id: climate.livingroom_thermostat
-              attribute: hvac_action
-              state: 'heating'
-          sequence:
-            - service: climate.set_hvac_mode
-              target:
-                entity_id: climate.boiler_kotel
-              data:
-                hvac_mode: 'heat'
-
-        # 🟡 Если термостат включён, но не греет (idle)
-        - conditions:
-            - condition: state
-              entity_id: climate.livingroom_thermostat
-              state: 'heat'
-            - condition: state
-              entity_id: climate.livingroom_thermostat
-              attribute: hvac_action
-              state: 'idle'
-          sequence:
-            - service: climate.set_hvac_mode
-              target:
-                entity_id: climate.boiler_kotel
-              data:
-                hvac_mode: 'off'
-
-        # 🔴 Если термостат выключен
-        - conditions:
-            - condition: state
-              entity_id: climate.livingroom_thermostat
-              state: 'off'
-          sequence:
-            - service: climate.set_hvac_mode
-              target:
-                entity_id: climate.boiler_kotel
-              data:
-                hvac_mode: 'off'
-
-  mode: restart
 
 - id: bathroom_presence_fan_control
   alias: "Управление вытяжкой по датчику присутствия"
@@ -577,7 +341,6 @@
       entity_id: binary_sensor.human_sensor_bathroom_presence
   action:
     - choose:
-        # Ветка 1: Если датчик показал присутствие (on) - включаем вентилятор
         - conditions:
             - condition: state
               entity_id: binary_sensor.human_sensor_bathroom_presence
@@ -586,7 +349,6 @@
             - service: switch.turn_on
               target:
                 entity_id: switch.airvent_relay
-        # Ветка 2: Если датчик показал отсутствие (off) - выключаем вентилятор
         - conditions:
             - condition: state
               entity_id: binary_sensor.human_sensor_bathroom_presence
@@ -596,205 +358,7 @@
               target:
                 entity_id: switch.airvent_relay
   mode: single
-  
-- id: gas_boiler_watchdog
-  alias: Watchdog для газового котла
-  description: >
-    При потере связи с SmartTherm на 5 минут проверяем, не легла ли
-    сеть целиком. Если сеть жива — до 3 раз перезапускаем питание
-    контроллера с проверкой результата после каждой попытки.
-  trigger:
-    - platform: state
-      entity_id: binary_sensor.gas_ping
-      to: 'off'
-      for: '00:05:00'
-  condition: []
-  action:
-    - choose:
-        # Похоже, легла вся сеть, а не конкретно контроллер котла —
-        # перезапуск питания тут не поможет и может лишь навредить
-        - conditions:
-            - condition: state
-              entity_id: binary_sensor.192_168_0_185
-              state: 'off'
-          sequence:
-            - service: logbook.log
-              data:
-                name: "Watchdog котла"
-                message: "Рестарт пропущен: похоже, недоступна вся сеть, а не контроллер"
-            - service: notify.me
-              data:
-                message: >
-                  ⚠️ Связь с котлом (SmartTherm, 192.168.0.212) потеряна,
-                  но заодно недоступны и часы Awtrix — похоже, легла
-                  вся сеть. Перезапуск контроллера не выполняю, проверь
-                  роутер/Wi-Fi.
-      default:
-        - repeat:
-            count: 3
-            sequence:
-              - service: logbook.log
-                data:
-                  name: "Watchdog котла"
-                  message: "Попытка перезапуска питания №{{ repeat.index }}"
 
-              - service: switch.turn_off
-                target:
-                  entity_id: switch.gas_usb
-              - delay:
-                  seconds: 10
-              - service: switch.turn_on
-                target:
-                  entity_id: switch.gas_usb
-
-              # даём контроллеру время на полную загрузку и коннект к MQTT
-              - delay:
-                  seconds: 90
-
-              - if:
-                  - condition: state
-                    entity_id: binary_sensor.gas_ping
-                    state: 'on'
-                then:
-                  - service: notify.me
-                    data:
-                      message: >
-                        ✅ Контроллер газового котла снова на связи после
-                        перезапуска (попытка {{ repeat.index }} из 3).
-                  - stop: "Связь восстановлена, дальнейшие попытки не нужны"
-
-        # сюда попадаем только если все 3 попытки не дали результата
-        - service: notify.me
-          data:
-            message: >
-              🔴 3 попытки перезапустить контроллер газового котла
-              (SmartTherm, 192.168.0.212) не помогли. Автоматика больше
-              не долбит реле — нужна ручная проверка.
-        - service: logbook.log
-          data:
-            name: "Watchdog котла"
-            message: "Эскалация: 3 неудачные попытки перезапуска подряд"
-  mode: single
-
-- id: gas_boiler_recovered
-  alias: Котел — связь восстановлена
-  description: Уведомление, когда связь с SmartTherm вернулась после простоя
-  trigger:
-    - platform: state
-      entity_id: binary_sensor.gas_ping
-      from: 'off'
-      to: 'on'
-  condition:
-    # уведомляем только если простой был ощутимым, а не микроскачок на секунду
-    - condition: template
-      value_template: >
-        {{ (as_timestamp(now()) - as_timestamp(trigger.from_state.last_changed)) > 300 }}
-  action:
-    - service: notify.me
-      data:
-        message: >
-          🟢 Связь с контроллером газового котла восстановлена.
-          Отсутствовал {{ ((as_timestamp(now()) - as_timestamp(trigger.from_state.last_changed)) / 60) | round(1) }} мин.
-  mode: single
-
-- id: hasp_thermostat_temp_adjust
-  alias: "Регулировка температуры термостата с панели openHASP"
-  trigger:
-    - platform: mqtt
-      topic: hasp/plate1/state/p3b11 # кнопка "-"
-    - platform: mqtt
-      topic: hasp/plate1/state/p3b12 # кнопка "+"
-  action:
-    - variables:
-        # Текущее состояние и параметры термостата
-        cur_temp: "{{ state_attr('climate.livingroom_thermostat', 'temperature') | float(0) }}"
-        min_temp: "{{ state_attr('climate.livingroom_thermostat', 'min_temp') | float(14) }}"
-        max_temp: "{{ state_attr('climate.livingroom_thermostat', 'max_temp') | float(28) }}"
-        step: 0.1
-        # Определяем направление (нажата + или -)
-        direction: >
-          {% if trigger.topic.endswith('p3b11') %}-{% elif trigger.topic.endswith('p3b12') %}+{% endif %}
-        # Новое значение с учётом границ
-        new_temp: >
-          {% if direction == '-' %}
-            {{ [cur_temp - step, min_temp] | max }}
-          {% elif direction == '+' %}
-            {{ [cur_temp + step, max_temp] | min }}
-          {% else %}
-            {{ cur_temp }}
-          {% endif %}
-    - service: climate.set_temperature
-      target:
-        entity_id: climate.livingroom_thermostat
-      data:
-        temperature: "{{ new_temp | round(1) }}"
-    - condition: state
-      entity_id: input_boolean.climate_daily
-      state: 'on'
-    - service: input_boolean.turn_off
-      target:
-        entity_id: input_boolean.climate_daily
-    - delay: "00:00:0.4" # задержка 400 мс для защиты от дребезга
-
-- id: boiler_sync_by_timer
-  alias: 'Синхронизация котла по таймеру'
-  description: 'Периодическая проверка и синхронизация состояния котла с термостатом'
-  trigger:
-    - platform: time_pattern
-      minutes: '/5'
-  action:
-    # Определяем необходимый режим котла на основе состояния термостата
-    - variables:
-        thermostat_mode: "{{ states('climate.livingroom_thermostat') }}"
-        thermostat_action: "{{ state_attr('climate.livingroom_thermostat', 'hvac_action') }}"
-        required_boiler_mode: >
-          {% if thermostat_mode == 'heat' and thermostat_action == 'heating' %}
-            heat
-          {% else %}
-            off
-          {% endif %}
-        current_boiler_mode: "{{ states('climate.boiler_kotel') }}"
-
-    # Применяем требуемый режим, если он отличается от текущего
-    - choose:
-        - conditions: "{{ current_boiler_mode != required_boiler_mode and required_boiler_mode == 'heat' }}"
-          sequence:
-            - service: climate.set_hvac_mode
-              target:
-                entity_id: climate.boiler_kotel
-              data:
-                hvac_mode: 'heat'
-            - service: notify.me
-              data:
-                message: |
-                  🔥 Котел ВКЛЮЧЕН по таймеру
-                  Термостат: {{ thermostat_mode }} ({{ thermostat_action }})
-                  Котел был: {{ current_boiler_mode }}
-
-        - conditions: "{{ current_boiler_mode != required_boiler_mode and required_boiler_mode == 'off' }}"
-          sequence:
-            - service: climate.set_hvac_mode
-              target:
-                entity_id: climate.boiler_kotel
-              data:
-                hvac_mode: 'off'
-            - service: notify.me
-              data:
-                message: |
-                  ⏹️ Котел ВЫКЛЮЧЕН по таймеру
-                  Термостат: {{ thermostat_mode }} ({{ thermostat_action }})
-                  Котел был: {{ current_boiler_mode }}
-
-        - conditions: "{{ current_boiler_mode == required_boiler_mode }}"
-          sequence:
-            # Состояния совпадают - ничего не делаем
-            - service: system_log.write
-              data:
-                logger: homeassistant.automation.boiler_sync
-                level: info
-                message: "Состояния совпадают, изменений не требуется"
-
-  mode: single
 - id: house_devices_off
   alias: "Контроль освещения — выключить после 5 часов работы"
   trigger:
@@ -802,7 +366,6 @@
       minutes: "/30"
   condition: []
   action:
-    # Для switch.livingroom_relay
     - if:
         - condition: state
           entity_id: switch.livingroom_relay
@@ -819,8 +382,6 @@
             message: |
               ⚠️ Реле в гостиной работало более 5 часов.
               Автоматически отключено.
-
-    # Для light.torsher_lamp
     - if:
         - condition: state
           entity_id: light.torsher_lamp
@@ -839,22 +400,19 @@
               Автоматически отключен.
   mode: parallel
   max: 3
+
 - id: panel_cam_snapshot
   alias: Отображение кадра с домофона
-
   triggers:
     - seconds: /2
       trigger: time_pattern
-
   conditions:
     - condition: state
       entity_id: light.plate1_backlight
       state: 'on'
-
     - condition: state
       entity_id: number.plate1_page_number
       state: '4'
-
   actions:
     - action: openhasp.push_image
       continue_on_error: true
@@ -865,58 +423,18 @@
         image: http://192.168.0.101/snapshot.jpg
         width: 480
         height: 270
-
   mode: restart
-  
-- id: boiler_count_starts
-  alias: Счётчик включений горелки
-  trigger:
-  - platform: state
-    entity_id: binary_sensor.boiler_gorelka
-    from: 'off'
-    to: 'on'
-    for: 00:00:05
-  action:
-  - service: input_number.set_value
-    target:
-      entity_id: input_number.boiler_starts_last_hour
-    data:
-      value: '{{ states(''input_number.boiler_starts_last_hour'') | int + 1 }}'
-- id: boiler_reset_hourly
-  alias: Сброс счётчика горелки каждый час
-  trigger:
-  - platform: time_pattern
-    minutes: 0
-    seconds: 0
-  action:
-  - service: input_number.set_value
-    data:
-      entity_id: input_number.boiler_starts_previous_hour
-      value: "{{ states('input_number.boiler_starts_last_hour') | int }}"
-  - service: input_number.set_value
-    target:
-      entity_id: input_number.boiler_starts_last_hour
-    data:
-      value: 0
-  mode: single
+
 - id: munute_tact
-  alias: Ежеминутная автоматизация (отображение на панели и режим термостата)
+  alias: Ежеминутная автоматизация (отображение на панели)
   trigger:
     - platform: time_pattern
       minutes: /1
-
   action:
-    ######################################
-    # 🕒 Время на панели
-    ######################################
     - service: mqtt.publish
       data:
         topic: hasp/plate1/command/p0b1.text
         payload: '{{ now().strftime("%H:%M") }}'
-
-    ######################################
-    # 🌅 Восход
-    ######################################
     - service: mqtt.publish
       data:
         topic: hasp/plate1/command/p2b3.text
@@ -926,10 +444,6 @@
           {% else %}
             Восход: Н/Д
           {% endif %}
-
-    ######################################
-    # 🌇 Закат
-    ######################################
     - service: mqtt.publish
       data:
         topic: hasp/plate1/command/p2b4.text
@@ -939,43 +453,6 @@
           {% else %}
             Закат: Н/Д
           {% endif %}
-
-    ######################################
-    # 🕹️ Управление режимом термостата по времени суток
-    ######################################
-    - choose:
-        - conditions:
-            - condition: state
-              entity_id: input_boolean.climate_daily
-              state: "on"
-          sequence:
-            - variables:
-                hour: "{{ now().hour }}"
-                desired_preset: >-
-                  {% if hour >= 0 and hour < 7 %}
-                    sleep
-                  {% else %}
-                    comfort
-                  {% endif %}
-                current_preset: "{{ state_attr('climate.livingroom_thermostat', 'preset_mode') }}"
-            - condition: template
-              value_template: "{{ desired_preset != current_preset }}"
-            - service: climate.set_preset_mode
-              target:
-                entity_id: climate.livingroom_thermostat
-              data:
-                preset_mode: "{{ desired_preset }}"
-            - service: notify.me
-              data:
-                message: >
-                  🔄 Режим термостата автоматически изменён:
-                  {{ desired_preset | replace('comfort','Комфорт') | replace('sleep','Сон') }}
-                  🌡 Температура гостиной: {{ states('sensor.livingroom_sensor_temperature') | float(0) | round(1) }}°C
-                  🕒 {{ now().strftime('%H:%M %d.%m.%Y') }}
-
-    ######################################
-    # 🌡️ Отображение текущего preset_mode на панели
-    ######################################
     - variables:
         preset: "{{ state_attr('climate.livingroom_thermostat', 'preset_mode') | default('none') }}"
         ru_preset_map:
@@ -990,191 +467,87 @@
       data:
         topic: hasp/plate1/command/p3b8.val
         payload: "{{ val }}"
-        
+
 - id: panel_page
   alias: Отображение страницы на панели
   trigger:
-  - platform: mqtt
-    topic: hasp/plate1/state/page
+    - platform: mqtt
+      topic: hasp/plate1/state/page
   action:
-  - service: mqtt.publish
-    data:
-      topic: hasp/plate1/command/p0b2.text
-      payload: 'Стр: {{ trigger.payload }}'
+    - service: mqtt.publish
+      data:
+        topic: hasp/plate1/command/p0b2.text
+        payload: 'Стр: {{ trigger.payload }}'
+
 - id: livingroom_light
   alias: Переключение основного света в гостиной
   trigger:
-  - platform: mqtt
-    topic: zigbee2mqtt_poe/livingroom_switch/action
-    payload: single_left
+    - platform: mqtt
+      topic: zigbee2mqtt_poe/livingroom_switch/action
+      payload: single_left
   action:
-  - service: switch.toggle
-    data: {}
-    target:
-      entity_id:
-      - switch.livingroom_relay
-      
+    - service: switch.toggle
+      data: {}
+      target:
+        entity_id:
+          - switch.livingroom_relay
+
 - id: kitchen_led_toggle
   alias: Переключение подсветки кухни
   trigger:
-  - platform: mqtt
-    topic: zigbee2mqtt_poe/kitchen_led_button/action
-    payload: single
+    - platform: mqtt
+      topic: zigbee2mqtt_poe/kitchen_led_button/action
+      payload: single
   action:
-  - service: switch.toggle
-    target:
-      entity_id: switch.kitchen_led_relay
+    - service: switch.toggle
+      target:
+        entity_id: switch.kitchen_led_relay
 
 - id: torsher_switch
   alias: Переключение торшера в гостиной
   trigger:
-  - platform: mqtt
-    topic: zigbee2mqtt_poe/livingroom_switch/action
-    payload: single_right
+    - platform: mqtt
+      topic: zigbee2mqtt_poe/livingroom_switch/action
+      payload: single_right
   action:
-  - service: light.toggle
-    data: {}
-    target:
-      entity_id:
-      - light.torsher_lamp
-- id: notify_boiler_error
-  alias: Уведомление об ошибке котла
-  trigger:
-  - platform: state
-    entity_id: sensor.boiler_oshibki
-  condition:
-  - condition: template
-    value_template: '{{ trigger.to_state.state != ''нет'' }}'
-  action:
-  - service: notify.me
-    data:
-      message: '⚠️ Обнаружена ошибка котла!
-
-        Сообщение: {{ states(''sensor.boiler_oshibki'') }}
-
-        '
-  mode: single
-- id: report_indoor_temp
-  alias: Report indoor temp to SmarTherm controller
-  triggers:
-  - trigger: time_pattern
-    seconds: /10
-  conditions:
-  - condition: template
-    value_template: '{{ states(''source_entity'') != ''unavailable'' }}'
-  actions:
-  - if:
-    - condition: template
-      value_template: '{{ (states(source_entity)|float(0) - states(target_entity)|float(0))
-        | abs | round(2) >= 0.05 }}'
-    then:
-    - action: number.set_value
-      metadata: {}
-      data:
-        value: '{{ states(source_entity)|float(0)|round(2) }}'
+    - service: light.toggle
+      data: {}
       target:
-        entity_id: '{{ target_entity }}'
-  variables:
-    source_entity: sensor.livingroom_sensor_temperature
-    target_entity: number.boiler_t_indoor
-  mode: single
-- id: report_outdoor_temp
-  alias: Report outdoor temp to SmarTherm controller
-  triggers:
-  - trigger: time_pattern
-    seconds: /30
+        entity_id:
+          - light.torsher_lamp
 
-  variables:
-    yard_temp: "{{ states('sensor.yard_sensor_temperature') }}"
-    weather_temp: "{{ state_attr('weather.forecast_house_lenina', 'temperature') }}"
-    use_weather: "{{ yard_temp in ['unavailable', 'unknown', None] }}"
-    source_value: >-
-      {% if not use_weather %}
-        {{ yard_temp | float(0) }}
-      {% else %}
-        {{ weather_temp | float(0) }}
-      {% endif %}
-    target_entity: number.boiler_t_outdoor
-
-  conditions:
-  - condition: template
-    value_template: "{{ source_value != 0 }}"
-
-  actions:
-  - choose:
-      # 1️⃣ если локальный сенсор недоступен — шлём уведомление и используем погоду
-      - conditions:
-          - condition: template
-            value_template: "{{ use_weather }}"
-        sequence:
-          - service: notify.me
-            data:
-              message: |
-                ⚠️ Уличный сенсор температуры неисправен или временно недоступен.
-                Берем данные с метеосайта.
-          - if:
-              - condition: template
-                value_template: >
-                  {{ (source_value - states(target_entity)|float(0)) | abs | round(2) >= 0.05 }}
-            then:
-              - action: number.set_value
-                target:
-                  entity_id: "{{ target_entity }}"
-                data:
-                  value: "{{ source_value | round(2) }}"
-      # 2️⃣ если сенсор работает нормально
-      - conditions:
-          - condition: template
-            value_template: "{{ not use_weather }}"
-        sequence:
-          - if:
-              - condition: template
-                value_template: >
-                  {{ (source_value - states(target_entity)|float(0)) | abs | round(2) >= 0.05 }}
-            then:
-              - action: number.set_value
-                target:
-                  entity_id: "{{ target_entity }}"
-                data:
-                  value: "{{ source_value | round(2) }}"
-  mode: single
 - id: soil_moisture_check
   alias: Влага почвы — напоминание при понижении
   trigger:
-  - platform: numeric_state
-    entity_id: sensor.plant_sensor_soil_moisture
-    below: 100
-    for: 00:00:10
-  - platform: time
-    at: '10:00:00'
+    - platform: numeric_state
+      entity_id: sensor.plant_sensor_soil_moisture
+      below: 100
+      for: 00:00:10
+    - platform: time
+      at: '10:00:00'
   condition:
-  - condition: numeric_state
-    entity_id: sensor.plant_sensor_soil_moisture
-    below: 100
+    - condition: numeric_state
+      entity_id: sensor.plant_sensor_soil_moisture
+      below: 100
   action:
-  - service: notify.me
-    data:
-      message: "Проверьте влажность почвы у цветов в доме\n \U0001F331 Влажность ниже
-        100%.\n \n"
-        
+    - service: notify.me
+      data:
+        message: "Проверьте влажность почвы у цветов в доме\n \U0001F331 Влажность ниже
+          100%.\n \n"
+
 - id: gate_open
   alias: Домофон — калитка открыта
   mode: single
-
   trigger:
     - platform: event
       event_type: call_service
-
   condition:
     - condition: template
       value_template: >
         {{ trigger.event.data.domain == 'rest_command'
            and trigger.event.data.service == 'domofon_open_door' }}
-
   action:
     - parallel:
-
-        # Озвучка
         - sequence:
             - service: media_player.play_media
               continue_on_error: true
@@ -1185,30 +558,20 @@
                 media_content_type: text
                 extra:
                   volume_level: 0.7
-
-        # Фото + видео
         - sequence:
             - service: camera.snapshot
               continue_on_error: true
               data:
                 entity_id: camera.domofon_audio
                 filename: /config/www/domofon.jpg
-
             - service: shell_command.record_domofon_video
               continue_on_error: true
-
-        # Завершить вызов
         - sequence:
             - delay: "00:00:02"
-
             - service: rest_command.domofon_reject_call
               continue_on_error: true
-
-        # Отправка фото и видео
         - sequence:
-
             - delay: "00:00:07"
-
             - service: notify.me
               continue_on_error: true
               data:
@@ -1217,9 +580,7 @@
                   photo:
                     - file: /config/www/domofon.jpg
                       caption: "Калитка открыта. Фото 📸"
-
             - delay: "00:00:02"
-
             - service: notify.me
               continue_on_error: true
               data:
@@ -1228,21 +589,21 @@
                   video:
                     - file: /config/www/domofon.mp4
                       caption: "... и видео 🎥"
-
             - service: shell_command.delete_domofon_video
               continue_on_error: true
-              
+
 - id: total_info
   alias: Уведомление о потреблении ежесуточно
   trigger:
-  - platform: time
-    at: 00:01:00
+    - platform: time
+      at: 00:01:00
   action:
-  - service: notify.me
-    data:
-      message: "Потреблено за сутки в доме:  \n⚡ Энергия: {{ state_attr('sensor.daily_energy_main',
-        'last_period') | float }} кВт⋅ч  \n\U0001F4A7 Вода: {{ state_attr('sensor.daily_water',
-        'last_period') | float }} м³\n"
+    - service: notify.me
+      data:
+        message: "Потреблено за сутки в доме:  \n⚡ Энергия: {{ state_attr('sensor.daily_energy_main',
+          'last_period') | float }} кВт⋅ч  \n\U0001F4A7 Вода: {{ state_attr('sensor.daily_water',
+          'last_period') | float }} м³\n"
+
 - id: devices_offline_notification
   alias: Оповещение о потере связи с устройствами
   trigger:
@@ -1255,12 +616,10 @@
         - binary_sensor.gas_ping
       to: 'off'
       for: "00:02:00"
-
   condition:
     - condition: state
       entity_id: input_boolean.notify_offline
       state: 'on'
-
   action:
     - service: notify.me
       data:
@@ -1273,6 +632,7 @@
             'binary_sensor.gas_ping': ['SmartTherm', '192.168.0.212']
           } %}
           ША: {{ devices[trigger.entity_id][0] }} ({{ devices[trigger.entity_id][1] }}) не в сети более 2 минут
+
 - id: leaving_home
   alias: Хозяева покинули дом
   trigger:
@@ -1280,18 +640,18 @@
     entity_id: group.family
     to: not_home
   action:
-  - service: notify.me
-    data:
-      message: 'ША: Все ушли, уведомления об открытии дверей включены'
-  - service: switch.turn_on
-    data:
-      entity_id: switch.ipcam_plug
-  - service: switch.turn_off
-    data:
-      entity_id: switch.wled_plug
-  - service: input_boolean.turn_on
-    target:
-      entity_id: input_boolean.notify_door
+    - service: notify.me
+      data:
+        message: 'ША: Все ушли, уведомления об открытии дверей включены'
+    - service: switch.turn_on
+      data:
+        entity_id: switch.ipcam_plug
+    - service: switch.turn_off
+      data:
+        entity_id: switch.wled_plug
+    - service: input_boolean.turn_on
+      target:
+        entity_id: input_boolean.notify_door
 
 - id: entering_home
   alias: Хозяин вернулся в дом
@@ -1301,40 +661,42 @@
     from: not_home
     to: home
   action:
-  - service: notify.me
-    data:
-      message: 'ША: Кто-то из хозяев пришёл в дом, уведомления об открытии дверей отключены'
-  - service: switch.turn_off
-    data:
-      entity_id: switch.ipcam_plug
-  - service: switch.turn_on
-    data:
-      entity_id: switch.wled_plug
-  - service: input_boolean.turn_off
-    target:
-      entity_id: input_boolean.notify_door
+    - service: notify.me
+      data:
+        message: 'ША: Кто-то из хозяев пришёл в дом, уведомления об открытии дверей отключены'
+    - service: switch.turn_off
+      data:
+        entity_id: switch.ipcam_plug
+    - service: switch.turn_on
+      data:
+        entity_id: switch.wled_plug
+    - service: input_boolean.turn_off
+      target:
+        entity_id: input_boolean.notify_door
+
 - id: door_open
   alias: Оповещение об открытии дверей дома
   mode: parallel
   trigger:
-  - platform: state
-    entity_id:
-    - binary_sensor.front_door_contact
-    - binary_sensor.back_door_contact
-    from: 'on'
-    to: 'off'
+    - platform: state
+      entity_id:
+        - binary_sensor.front_door_contact
+        - binary_sensor.back_door_contact
+      from: 'on'
+      to: 'off'
   condition:
-  - condition: state
-    entity_id: input_boolean.notify_door
-    state: 'on'
+    - condition: state
+      entity_id: input_boolean.notify_door
+      state: 'on'
   variables:
     door_name: "{% if trigger.entity_id == 'binary_sensor.front_door_contact' %}\n
       \ парадной двери \U0001F513\n{% elif trigger.entity_id == 'binary_sensor.back_door_contact'
       %}\n  задней двери \U0001F513\n{% else %}\n  неизвестной двери\n{% endif %}"
   action:
-  - service: notify.me
-    data:
-      message: 'ША: Открытие {{ door_name }}'
+    - service: notify.me
+      data:
+        message: 'ША: Открытие {{ door_name }}'
+
 - id: sun_set
   alias: Закат (использую для проверки, включен ли сервер)
   trigger:
@@ -1347,17 +709,16 @@
           ША: Солнце село 🌅
           temp out {{ states('sensor.yard_sensor_temperature') | float(0) | round(1) }}°C / in {{ states('sensor.bedroom_sensor_temperature') | float(0) | round(1) }}°C
   mode: single
+
 - id: leak_water_protection
   alias: Протечка — перекрытие воды и оповещение
   mode: single
-
   trigger:
     - platform: state
       entity_id:
         - binary_sensor.leak_kitchen_water_leak
         - binary_sensor.leak_toilet_water_leak
       to: 'on'
-
   variables:
     leak_place: >
       {% if trigger.entity_id == 'binary_sensor.leak_kitchen_water_leak' %}
@@ -1367,19 +728,13 @@
       {% else %}
         неизвестном месте
       {% endif %}
-
   action:
-    # 🚰 Перекрыть воду
     - service: switch.turn_on
       target:
         entity_id: switch.water_isolation_valve
-
-    # 📩 Уведомление в Telegram
     - service: notify.me
       data:
         message: "🚨 ПРОТЕЧКА в {{ leak_place }}! Вода перекрыта."
-
-    # 🔊 Озвучка на колонке
     - service: media_player.play_media
       target:
         entity_id: !secret yandex_station_livingroom
@@ -1387,24 +742,21 @@
         media_content_id: "Обнаружена протечка в {{ leak_place }}. Вода перекрыта."
         media_content_type: text
         extra:
-          volume_level: 0.9  
+          volume_level: 0.9
+
 - id: domofon_ringing
   alias: Вызов на домофоне
   trigger:
     - platform: state
       entity_id: sensor.domofon_call_state
       to: ringing
-
   condition: []
-
   action:
     - variables:
         prev_page: "{{ states('number.plate1_page_number') | int(1) }}"
-
     - service: notify.me
       data:
         message: "📞 Вызов на домофоне"
-
     - service: media_player.play_media
       target:
         entity_id: !secret yandex_station_livingroom
@@ -1413,30 +765,23 @@
         media_content_type: text
         extra:
           volume_level: 0.7
-
     - service: number.set_value
       target:
         entity_id: number.plate1_page_number
       data:
         value: 4
-
     - service: light.turn_on
       target:
         entity_id: light.plate1_backlight
       data:
         brightness_pct: 100
-
     - delay: "00:01:00"
-
     - service: number.set_value
       target:
         entity_id: number.plate1_page_number
       data:
         value: "{{ prev_page }}"
-
     - service: light.turn_off
       target:
         entity_id: light.plate1_backlight
-
   mode: single
-

@@ -340,56 +340,91 @@ views:
   cards:
     - type: vertical-stack
       cards:
+
+        # Управление — то, чем ты реально рулишь отоплением
         - type: entities
-          show_header_toggle: false     
+          show_header_toggle: false
+          title: Газовый котел — управление
           entities:
             - entity: climate.livingroom_thermostat
               name: Термостат гостиной
             - entity: input_boolean.climate_daily
               name: Режимы термостата по расписанию
-            - entity: climate.boiler_goriachaia_voda
-              name: Горячая вода 
             - entity: climate.boiler_kotel
-              name: Отопление   
+              name: Отопление
+            - entity: climate.boiler_goriachaia_voda
+              name: Горячая вода
+
+        # Диагностика — здоровье связи и самого контроллера
+        - type: entities
+          show_header_toggle: false
+          title: Газовый котел — диагностика
+          entities:
+            - entity: binary_sensor.gas_ping
+              name: Связь с контроллером
+            - entity: switch.gas_usb
+              name: Питание контроллера
+            - entity: sensor.boiler_oshibki
+              name: Код ошибки
             - entity: binary_sensor.boiler_gorelka
               name: Горелка
-            - entity: number.boiler_t_outdoor
-              name: Температура на улице
-              icon: mdi:sun-thermometer-outline 
-            - entity: number.boiler_t_indoor
-              name: Температура в помещении
-              icon: mdi:home-thermometer-outline
-          title: Газовый котел
+            - entity: sensor.gas_boiler_required_mode
+              name: Требуемый режим (расчёт)
 
-        - type: history-graph  
+        # Репортинг — что мы передаём в контроллер и откуда берём
+        - type: entities
+          show_header_toggle: false
+          title: Газовый котел — датчики
+          entities:
+            - entity: sensor.yard_sensor_temperature
+              name: Улица (датчик)
+              icon: mdi:thermometer
+            - entity: number.boiler_t_outdoor
+              name: Улица (передано в контроллер)
+              icon: mdi:sun-thermometer-outline
+            - entity: number.boiler_t_indoor
+              name: В доме (передано в контроллер)
+              icon: mdi:home-thermometer-outline
+
+        - type: history-graph
           title: "Температура теплоносителя"
           hours_to_show: 1
           entities:
             - sensor.boiler_temperatura_teplonositelia
-            
-        - type: history-graph  
+
+        - type: history-graph
           title: "Модуляция котла"
           hours_to_show: 1
           entities:
             - sensor.boiler_moduliatsiia
-            
+
+        # Добавлены climate.boiler_kotel и sensor.gas_boiler_required_mode —
+        # теперь видно всю цепочку решений одним взглядом:
+        # расчётный режим → фактический режим котла → горелка → тепловой контур
         - type: history-graph
           title: Состояние сенсоров (за последний час)
           hours_to_show: 1
           refresh_interval: 60
           entities:
-          - entity: binary_sensor.boiler_gorelka
-          - entity: binary_sensor.boiler_otoplenie
-          - entity: switch.virtual_heating_relay
-            
+            - entity: sensor.gas_boiler_required_mode
+              name: Требуемый режим
+            - entity: climate.boiler_kotel
+              name: Режим котла
+            - entity: binary_sensor.boiler_gorelka
+              name: Горелка
+            - entity: binary_sensor.boiler_otoplenie
+              name: Отопление вкл.
+            - entity: switch.virtual_heating_relay
+              name: Виртуальное реле
+
         - type: history-graph
           title: Тактование горелки по часам
           hours_to_show: 24
           entities:
-          - entity: input_number.boiler_starts_last_hour
+            - entity: input_number.boiler_starts_last_hour
 
-        - type: history-graph  
-          title: "Температура в гостиной и реле"
+        - type: history-graph
+          title: "Температура по комнатам и виртуальное реле"
           hours_to_show: 12
           entities:
             - entity: sensor.bedroom_sensor_temperature

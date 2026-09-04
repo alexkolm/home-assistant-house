@@ -1,0 +1,569 @@
+# =====================================================================
+# Управление газовым котлом (Wertrus ECO-24FF + SmartTherm) и
+# термостатом гостиной. Полная цепочка: репортинг температур в
+# контроллер → расчёт требуемого режима → синхронизация с котлом →
+# ступенчатый прогрев после холодного старта → watchdog связи →
+# пресеты по расписанию сна → диагностика/алерты.
+# =====================================================================
+
+- id: gas_boiler_stage_reset_on_cold_start
+  alias: Котел — сброс на первую ступень при холодном старте
+  description: >
+    Холодный старт = теплоноситель остыл ниже 30°C и котёл простаивал
+    больше 2 часов. В этом случае начинаем со ступени 1 (потолок 65°C),
+    чтобы избежать гула от неравномерного расширения деталей на холодную.
+  triggers:
+    - trigger: state
+      entity_id: binary_sensor.boiler_gorelka
+      to: 'on'
+  variables:
+    idle_seconds: >
+      {% set prev = trigger.from_state %}
+      {{ (as_timestamp(now()) - as_timestamp(prev.last_changed)) if prev else 999999 }}
+    teplonositel: "{{ states('sensor.boiler_temperatura_teplonositelia') | float(999) }}"
+  conditions:
+    - condition: template
+      value_template: "{{ teplonositel < 30 and idle_seconds > 7200 }}"
+  actions:
+    - action: input_number.set_value
+      target:
+        entity_id: input_number.gas_boiler_ceiling_stage
+      data:
+        value: 0
+    - action: climate.set_temperature
+      target:
+        entity_id: climate.boiler_kotel
+      data:
+        temperature: 65
+    - action: logbook.log
+      data:
+        name: "Котёл"
+        message: >
+          Холодный старт (теплоноситель {{ teplonositel | round(1) }}°C,
+          простой {{ (idle_seconds / 60) | round(0) }} мин). Ступень 1/4, потолок 65°C.
+  mode: single
+
+- id: gas_boiler_stage_advance
+  alias: Котел — переход на следующую ступень прогрева
+  description: >
+    После каждого завершённого такта горелки поднимаем потолок на
+    следующую ступень (65→70→75→80), пока не достигнем максимума.
+    К третьему-четвёртому такту детали уже прогреты равномерно, гул
+    не грозит — можно снимать ограничение и удлинять циклы.
+  triggers:
+    - trigger: state
+      entity_id: binary_sensor.boiler_gorelka
+      to: 'off'
+  variables:
+    stages: [65, 70, 75, 80]
+    current_stage: "{{ states('input_number.gas_boiler_ceiling_stage') | int(0) }}"
+    next_stage: "{{ [current_stage + 1, 3] | min }}"
+    next_ceiling: "{{ stages[next_stage] }}"
+  conditions:
+    - condition: template
+      value_template: "{{ current_stage < 3 }}"
+  actions:
+    - action: input_number.set_value
+      target:
+        entity_id: input_number.gas_boiler_ceiling_stage
+      data:
+        value: "{{ next_stage }}"
+    - action: climate.set_temperature
+      target:
+        entity_id: climate.boiler_kotel
+      data:
+        temperature: "{{ next_ceiling }}"
+    - action: logbook.log
+      data:
+        name: "Котёл"
+        message: "Такт завершён. Ступень {{ next_stage + 1 }}/4, потолок {{ next_ceiling }}°C."
+  mode: single
+
+- id: boiler_temp_limit
+  alias: Ограничение температуры котла (абсолютный предохранитель)
+  mode: single
+  trigger:
+    - platform: numeric_state
+      entity_id: climate.boiler_kotel
+      attribute: temperature
+      above: 80
+  action:
+    - service: climate.set_temperature
+      target:
+        entity_id: climate.boiler_kotel
+      data:
+        temperature: 80
+    - service: logbook.log
+      data:
+        name: "Котёл"
+        message: "Автоматизация ограничила температуру до 80°C"
+        entity_id: climate.boiler_kotel
+    - service: notify.me
+      data:
+        message: "Ограничиваем максимальную температуру котла автоматизацией"
+
+- id: gas_boiler_maxtemp_enforce_on_reconnect
+  alias: Установка лимита макс. температуры котла после (пере)подключения
+  description: >
+    Прошивка SmartTherm при каждом старте инициализирует MaxTSet
+    (OpenTherm ID57, макс. температура теплоносителя) значением по
+    умолчанию 80°C — это жёстко зашито в прошивке и не сохраняется в
+    конфиге контроллера, поэтому переживает только перезапуск, а не
+    хранится постоянно. Реконнект контроллера приравниваем к холодному
+    старту — начинаем с самой мягкой ступени.
+  triggers:
+    - trigger: state
+      entity_id: binary_sensor.gas_ping
+      to: 'on'
+  actions:
+    - delay:
+        seconds: 5
+    - action: input_number.set_value
+      target:
+        entity_id: input_number.gas_boiler_ceiling_stage
+      data:
+        value: 0
+    - action: climate.set_temperature
+      target:
+        entity_id: climate.boiler_kotel
+      data:
+        temperature: 65
+    - action: logbook.log
+      data:
+        name: "Котёл"
+        message: "Лимит макс. температуры 65°C установлен после (пере)подключения контроллера"
+        entity_id: climate.boiler_kotel
+  mode: single
+
+- id: gas_boiler_watchdog
+  alias: Watchdog для газового котла
+  description: >
+    При потере связи с SmartTherm на 5 минут проверяем, не легла ли
+    сеть целиком. Если сеть жива — до 3 раз перезапускаем питание
+    контроллера с проверкой результата после каждой попытки.
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.gas_ping
+      to: 'off'
+      for: '00:05:00'
+  condition: []
+  action:
+    - choose:
+        - conditions:
+            - condition: state
+              entity_id: binary_sensor.192_168_0_185
+              state: 'off'
+          sequence:
+            - service: logbook.log
+              data:
+                name: "Watchdog котла"
+                message: "Рестарт пропущен: похоже, недоступна вся сеть, а не контроллер"
+            - service: notify.me
+              data:
+                message: >
+                  ⚠️ Связь с котлом (SmartTherm, 192.168.0.212) потеряна,
+                  но заодно недоступны и часы Awtrix — похоже, легла
+                  вся сеть. Перезапуск контроллера не выполняю, проверь
+                  роутер/Wi-Fi.
+      default:
+        - repeat:
+            count: 3
+            sequence:
+              - service: logbook.log
+                data:
+                  name: "Watchdog котла"
+                  message: "Попытка перезапуска питания №{{ repeat.index }}"
+              - service: switch.turn_off
+                target:
+                  entity_id: switch.gas_usb
+              - delay:
+                  seconds: 10
+              - service: switch.turn_on
+                target:
+                  entity_id: switch.gas_usb
+              - delay:
+                  seconds: 90
+              - if:
+                  - condition: state
+                    entity_id: binary_sensor.gas_ping
+                    state: 'on'
+                then:
+                  - service: notify.me
+                    data:
+                      message: >
+                        ✅ Контроллер газового котла снова на связи после
+                        перезапуска (попытка {{ repeat.index }} из 3).
+                  - stop: "Связь восстановлена, дальнейшие попытки не нужны"
+        - service: notify.me
+          data:
+            message: >
+              🔴 3 попытки перезапустить контроллер газового котла
+              (SmartTherm, 192.168.0.212) не помогли. Автоматика больше
+              не долбит реле — нужна ручная проверка.
+        - service: logbook.log
+          data:
+            name: "Watchdog котла"
+            message: "Эскалация: 3 неудачные попытки перезапуска подряд"
+  mode: single
+
+- id: gas_boiler_recovered
+  alias: Котел — связь восстановлена
+  description: Уведомление, когда связь с SmartTherm вернулась после простоя
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.gas_ping
+      from: 'off'
+      to: 'on'
+  condition:
+    - condition: template
+      value_template: >
+        {{ (as_timestamp(now()) - as_timestamp(trigger.from_state.last_changed)) > 300 }}
+  action:
+    - service: notify.me
+      data:
+        message: >
+          🟢 Связь с контроллером газового котла восстановлена.
+          Отсутствовал {{ ((as_timestamp(now()) - as_timestamp(trigger.from_state.last_changed)) / 60) | round(1) }} мин.
+  mode: single
+
+- id: gas_boiler_sync
+  alias: Синхронизация газового котла с требуемым режимом
+  description: >
+    Единая точка управления climate.boiler_kotel. Реагирует и на изменение
+    состояния термостатов зон (мгновенно), и по таймеру раз в 5 минут
+    (страховка от рассинхрона, например после потери MQTT).
+  triggers:
+    - trigger: state
+      entity_id: climate.livingroom_thermostat
+    - trigger: time_pattern
+      minutes: /5
+  variables:
+    required_mode: "{{ states('sensor.gas_boiler_required_mode') }}"
+    current_mode: "{{ states('climate.boiler_kotel') }}"
+  conditions:
+    - condition: template
+      value_template: >
+        {{ current_mode not in ['unavailable', 'unknown']
+           and required_mode in ['heat', 'off'] }}
+    - condition: template
+      value_template: "{{ required_mode != current_mode }}"
+  actions:
+    - action: climate.set_hvac_mode
+      target:
+        entity_id: climate.boiler_kotel
+      data:
+        hvac_mode: "{{ required_mode }}"
+    - action: notify.me
+      data:
+        message: >
+          🔥 Котёл {{ 'ВКЛЮЧЁН' if required_mode == 'heat' else 'ВЫКЛЮЧЕН' }}
+          (было: {{ current_mode }})
+          🌡 Гостиная: {{ states('sensor.livingroom_sensor_temperature') | float(0) | round(1) }}°C,
+          цель: {{ state_attr('climate.livingroom_thermostat', 'temperature') }}°C
+          🕒 {{ now().strftime('%H:%M %d.%m.%Y') }}
+  mode: single
+
+- id: livingroom_preset_by_schedule
+  alias: Термостат гостиной — пресет по расписанию сна
+  description: >
+    Переключает comfort/sleep по Schedule-хелперу schedule.night_mode.
+    Реагирует на переход самого расписания и на включение
+    input_boolean.climate_daily обратно после ручного оверрайда.
+  triggers:
+    - trigger: state
+      entity_id: schedule.night_mode
+    - trigger: state
+      entity_id: input_boolean.climate_daily
+      to: "on"
+  conditions:
+    - condition: state
+      entity_id: input_boolean.climate_daily
+      state: "on"
+    - condition: not
+      conditions:
+        - condition: state
+          entity_id: climate.livingroom_thermostat
+          attribute: preset_mode
+          state: "away"
+  variables:
+    desired_preset: "{{ 'sleep' if is_state('schedule.night_mode', 'on') else 'comfort' }}"
+    current_preset: "{{ state_attr('climate.livingroom_thermostat', 'preset_mode') }}"
+  actions:
+    - if:
+        - condition: template
+          value_template: "{{ desired_preset != current_preset }}"
+      then:
+        - action: climate.set_preset_mode
+          target:
+            entity_id: climate.livingroom_thermostat
+          data:
+            preset_mode: "{{ desired_preset }}"
+        - action: notify.me
+          data:
+            message: >
+              🔄 Режим термостата автоматически изменён:
+              {{ 'Комфорт' if desired_preset == 'comfort' else 'Сон' }}
+              🌡 Температура гостиной: {{ states('sensor.livingroom_sensor_temperature') | float(0) | round(1) }}°C
+              🕒 {{ now().strftime('%H:%M %d.%m.%Y') }}
+  mode: single
+
+- id: away_reminder
+  alias: Напоминание — не забыли включить режим "уехали"
+  description: >
+    Если хозяев нет дома дольше 4 часов, а режим away так и не включён
+    вручную — присылаем напоминание в Telegram. Ничего не переключаем
+    автоматически: дома может ночевать сестра, решение всегда за человеком.
+  triggers:
+    - trigger: state
+      entity_id: group.family
+      to: not_home
+      for: "04:00:00"
+  conditions:
+    - condition: template
+      value_template: >
+        {{ state_attr('climate.livingroom_thermostat', 'preset_mode') != 'away' }}
+  actions:
+    - action: notify.me
+      data:
+        message: >
+          🏠 Хозяев нет дома уже 4+ часа, а режим "away" не включён.
+          Сейчас в термостате режим: {{ state_attr('climate.livingroom_thermostat', 'preset_mode') }}
+          🌡 Гостиная: {{ states('sensor.livingroom_sensor_temperature') | float(0) | round(1) }}°C
+          Если дома никого не осталось — включи /away вручную.
+  mode: single
+
+- id: hasp_thermostat_temp_adjust
+  alias: "Регулировка температуры термостата с панели openHASP"
+  trigger:
+    - platform: mqtt
+      topic: hasp/plate1/state/p3b11
+    - platform: mqtt
+      topic: hasp/plate1/state/p3b12
+  action:
+    - variables:
+        cur_temp: "{{ state_attr('climate.livingroom_thermostat', 'temperature') | float(0) }}"
+        min_temp: "{{ state_attr('climate.livingroom_thermostat', 'min_temp') | float(14) }}"
+        max_temp: "{{ state_attr('climate.livingroom_thermostat', 'max_temp') | float(28) }}"
+        step: 0.1
+        direction: >
+          {% if trigger.topic.endswith('p3b11') %}-{% elif trigger.topic.endswith('p3b12') %}+{% endif %}
+        new_temp: >
+          {% if direction == '-' %}
+            {{ [cur_temp - step, min_temp] | max }}
+          {% elif direction == '+' %}
+            {{ [cur_temp + step, max_temp] | min }}
+          {% else %}
+            {{ cur_temp }}
+          {% endif %}
+    - service: climate.set_temperature
+      target:
+        entity_id: climate.livingroom_thermostat
+      data:
+        temperature: "{{ new_temp | round(1) }}"
+    - condition: state
+      entity_id: input_boolean.climate_daily
+      state: 'on'
+    - service: input_boolean.turn_off
+      target:
+        entity_id: input_boolean.climate_daily
+    - delay: "00:00:0.4"
+
+- id: boiler_count_starts
+  alias: Счётчик включений горелки
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.boiler_gorelka
+      from: 'off'
+      to: 'on'
+      for: 00:00:05
+  action:
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.boiler_starts_last_hour
+      data:
+        value: '{{ states(''input_number.boiler_starts_last_hour'') | int + 1 }}'
+
+- id: boiler_reset_hourly
+  alias: Сброс счётчика горелки каждый час
+  trigger:
+    - platform: time_pattern
+      minutes: 0
+      seconds: 0
+  action:
+    - service: input_number.set_value
+      data:
+        entity_id: input_number.boiler_starts_previous_hour
+        value: "{{ states('input_number.boiler_starts_last_hour') | int }}"
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.boiler_starts_last_hour
+      data:
+        value: 0
+  mode: single
+
+- id: boiler_short_cycling_alert
+  alias: Слишком частое тактование горелки
+  description: >
+    Разовое уведомление, если горелка запустилась больше N раз за
+    текущий час — признак плохо настроенной гидравлики/кривой отопления
+    или последствие короткого цикла нагрева.
+  triggers:
+    - trigger: numeric_state
+      entity_id: input_number.boiler_starts_last_hour
+      above: 8
+  actions:
+    - action: notify.me
+      data:
+        message: >
+          ⚠️ Горелка запускалась уже {{ states('input_number.boiler_starts_last_hour') | int }}
+          раз(а) за этот час — многовато, возможно, стоит посмотреть
+          настройки гистерезиса термостата.
+  mode: single
+
+- id: notify_boiler_error
+  alias: Уведомление об ошибке котла
+  trigger:
+    - platform: state
+      entity_id: sensor.boiler_oshibki
+  condition:
+    - condition: template
+      value_template: '{{ trigger.to_state.state != ''нет'' }}'
+  action:
+    - service: notify.me
+      data:
+        message: '⚠️ Обнаружена ошибка котла!
+          Сообщение: {{ states(''sensor.boiler_oshibki'') }}
+          '
+  mode: single
+
+- id: notify_boiler_error_cleared
+  alias: Ошибка котла устранена
+  triggers:
+    - trigger: state
+      entity_id: sensor.boiler_oshibki
+      to: "нет"
+  conditions:
+    - condition: template
+      value_template: "{{ trigger.from_state.state not in ['нет', 'unavailable', 'unknown'] }}"
+  actions:
+    - action: notify.me
+      data:
+        message: >
+          ✅ Ошибка котла устранена (была: {{ trigger.from_state.state }}).
+  mode: single
+
+- id: report_indoor_temp
+  alias: Report indoor temp to SmartTherm controller
+  description: >
+    Передача комнатной температуры в SmartTherm. Триггерится на реальное
+    изменение датчика + раз в 5 минут страховочно.
+  triggers:
+    - trigger: state
+      entity_id: sensor.livingroom_sensor_temperature
+    - trigger: time_pattern
+      minutes: /5
+  variables:
+    source_entity: sensor.livingroom_sensor_temperature
+    target_entity: number.boiler_t_indoor
+  conditions:
+    - condition: template
+      value_template: >
+        {{ states(source_entity) not in ['unavailable', 'unknown']
+           and states(target_entity) not in ['unavailable', 'unknown'] }}
+    - condition: state
+      entity_id: binary_sensor.gas_ping
+      state: 'on'
+  actions:
+    - if:
+        - condition: template
+          value_template: >
+            {{ (states(source_entity)|float(0) - states(target_entity)|float(0))
+               | abs | round(2) >= 0.05 }}
+      then:
+        - action: number.set_value
+          target:
+            entity_id: '{{ target_entity }}'
+          data:
+            value: '{{ states(source_entity)|float(0)|round(2) }}'
+  mode: single
+
+- id: report_outdoor_temp
+  alias: Report outdoor temp to SmartTherm controller
+  description: >
+    Передача уличной температуры в SmartTherm, с фолбэком на прогноз
+    погоды, если местный датчик недоступен.
+  triggers:
+    - trigger: state
+      entity_id: sensor.yard_sensor_temperature
+    - trigger: state
+      entity_id: weather.forecast_house_lenina
+    - trigger: time_pattern
+      minutes: /5
+  variables:
+    yard_temp: "{{ states('sensor.yard_sensor_temperature') }}"
+    weather_temp: "{{ state_attr('weather.forecast_house_lenina', 'temperature') }}"
+    use_weather: "{{ yard_temp in ['unavailable', 'unknown', None] }}"
+    source_value: >-
+      {% if not use_weather %}
+        {{ yard_temp | float(0) }}
+      {% else %}
+        {{ weather_temp | float(0) }}
+      {% endif %}
+    target_entity: number.boiler_t_outdoor
+  conditions:
+    - condition: template
+      value_template: >
+        {{ source_value != 0 and states(target_entity) not in ['unavailable', 'unknown'] }}
+    - condition: state
+      entity_id: binary_sensor.gas_ping
+      state: 'on'
+  actions:
+    - if:
+        - condition: template
+          value_template: >
+            {{ (source_value - states(target_entity)|float(0)) | abs | round(2) >= 0.05 }}
+      then:
+        - action: number.set_value
+          target:
+            entity_id: "{{ target_entity }}"
+          data:
+            value: "{{ source_value | round(2) }}"
+  mode: single
+
+- id: yard_sensor_unavailable_alert
+  alias: Уличный датчик температуры — потеря связи
+  description: >
+    Уведомление, только если сенсор реально недоступен продолжительное
+    время (10 минут), а не просто на секунду после рестарта HA.
+  triggers:
+    - trigger: state
+      entity_id: sensor.yard_sensor_temperature
+      to:
+        - 'unavailable'
+        - 'unknown'
+      for: '00:10:00'
+  actions:
+    - service: notify.me
+      data:
+        message: >
+          ⚠️ Уличный датчик температуры недоступен уже 10+ минут.
+          Отопление временно берёт уличную температуру из прогноза погоды.
+  mode: single
+
+- id: yard_sensor_recovered_alert
+  alias: Уличный датчик температуры — связь восстановлена
+  triggers:
+    - trigger: state
+      entity_id: sensor.yard_sensor_temperature
+      from:
+        - 'unavailable'
+        - 'unknown'
+  conditions:
+    - condition: template
+      value_template: >
+        {{ (as_timestamp(now()) - as_timestamp(trigger.from_state.last_changed)) > 600 }}
+  actions:
+    - service: notify.me
+      data:
+        message: "🟢 Уличный датчик температуры снова на связи."
+  mode: single

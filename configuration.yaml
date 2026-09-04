@@ -149,6 +149,18 @@ template:
 
   - sensor:
 
+      - name: "Gas Boiler Required Mode"
+        unique_id: gas_boiler_required_mode
+        state: >
+          {% set zone_thermostats = [
+            'climate.livingroom_thermostat'
+          ] %}
+          {% set demanding = zone_thermostats
+              | select('is_state', 'heat')
+              | select('is_state_attr', 'hvac_action', 'heating')
+              | list %}
+          {{ 'heat' if demanding | count > 0 else 'off' }}
+          
       - name: "Energy Total"
         unique_id: "energy_total"
         unit_of_measurement: "kWh"
@@ -453,7 +465,8 @@ sensor:
     max_age:
       hours: 24
 
-
-automation: !include automations.yaml
+automation:
+  - !include automations.yaml
+  - !include heating.yaml
 script: !include scripts.yaml
 scene: !include scenes.yaml
