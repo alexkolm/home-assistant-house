@@ -340,7 +340,6 @@ views:
   cards:
     - type: vertical-stack
       cards:
-
         # Управление — то, чем ты реально рулишь отоплением
         - type: entities
           show_header_toggle: false
@@ -350,6 +349,8 @@ views:
               name: Термостат гостиной
             - entity: input_boolean.climate_daily
               name: Режимы термостата по расписанию
+            - entity: schedule.night_mode
+              name: Расписание сна
             - entity: climate.boiler_kotel
               name: Отопление
             - entity: climate.boiler_goriachaia_voda
@@ -387,20 +388,11 @@ views:
               icon: mdi:home-thermometer-outline
 
         - type: history-graph
-          title: "Температура теплоносителя"
-          hours_to_show: 1
-          entities:
-            - sensor.boiler_temperatura_teplonositelia
-
-        - type: history-graph
           title: "Модуляция котла"
           hours_to_show: 1
           entities:
             - sensor.boiler_moduliatsiia
 
-        # Добавлены climate.boiler_kotel и sensor.gas_boiler_required_mode —
-        # теперь видно всю цепочку решений одним взглядом:
-        # расчётный режим → фактический режим котла → горелка → тепловой контур
         - type: history-graph
           title: Состояние сенсоров (за последний час)
           hours_to_show: 1
@@ -422,6 +414,9 @@ views:
           hours_to_show: 24
           entities:
             - entity: input_number.boiler_starts_last_hour
+              name: "Текущий час"
+            - entity: input_number.boiler_starts_previous_hour
+              name: "Предыдущий час"
 
         - type: history-graph
           title: "Температура по комнатам и виртуальное реле"

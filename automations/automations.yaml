@@ -613,7 +613,6 @@
         - binary_sensor.videoreg_ping
         - binary_sensor.192_168_0_50
         - binary_sensor.openhasp_panel
-        - binary_sensor.gas_ping
       to: 'off'
       for: "00:02:00"
   condition:
@@ -628,8 +627,7 @@
             'binary_sensor.domofon_ping': ['Домофон', '192.168.0.200'],
             'binary_sensor.videoreg_ping': ['Видеосервер', '192.168.0.150'],
             'binary_sensor.192_168_0_50': ['Zigbee-роутер', '192.168.0.50'],
-            'binary_sensor.openhasp_panel': ['OpenHASP панель', '192.168.0.120'],
-            'binary_sensor.gas_ping': ['SmartTherm', '192.168.0.212']
+            'binary_sensor.openhasp_panel': ['OpenHASP панель', '192.168.0.120']
           } %}
           ША: {{ devices[trigger.entity_id][0] }} ({{ devices[trigger.entity_id][1] }}) не в сети более 2 минут
 
@@ -775,6 +773,12 @@
         entity_id: light.plate1_backlight
       data:
         brightness_pct: 100
+        
+    - service: mqtt.publish
+      data:
+        topic: hasp/plate1/command/idle
+        payload: "off"
+        
     - delay: "00:01:00"
     - service: number.set_value
       target:
