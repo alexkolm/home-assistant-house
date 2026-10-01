@@ -1,3 +1,53 @@
+- id: magicube_wled_brightness
+  alias: Magic Cube — регулировка яркости WLED
+  triggers:
+    - trigger: mqtt
+      topic: zigbee2mqtt_poe/magicube
+      value_template: "{{ value_json.action }}"
+      payload: "rotate_right"
+      id: brightness_up
+
+    - trigger: mqtt
+      topic: zigbee2mqtt_poe/magicube
+      value_template: "{{ value_json.action }}"
+      payload: "rotate_left"
+      id: brightness_down
+
+  actions:
+    - choose:
+        - conditions:
+            - condition: trigger
+              id: brightness_up
+          sequence:
+            - action: light.turn_on
+              target:
+                entity_id: light.wled
+              data:
+                brightness_step_pct: 10
+
+        - conditions:
+            - condition: trigger
+              id: brightness_down
+          sequence:
+            - action: light.turn_on
+              target:
+                entity_id: light.wled
+              data:
+                brightness_step_pct: -10
+
+  mode: single
+- id: magicube_toggle_wled
+  alias: Magic Cube — переключение подсветки
+  triggers:
+    - trigger: mqtt
+      topic: zigbee2mqtt_poe/magicube
+      value_template: "{{ value_json.action }}"
+      payload: "flip90"
+  actions:
+    - action: light.toggle
+      target:
+        entity_id: light.wled
+  mode: single
 - id: panel_weather_charts
   alias: Отображение графиков погоды
   triggers:

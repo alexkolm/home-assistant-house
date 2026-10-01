@@ -376,79 +376,82 @@
 - id: report_indoor_temp
   alias: Report indoor temp to SmartTherm controller
   description: >
-    Передача комнатной температуры в SmartTherm. Триггерится на реальное
-    изменение датчика + раз в 5 минут страховочно.
+    Передача комнатной температуры в SmartTherm.
+    Проверка каждые 10 секунд, значение отправляется только
+    при изменении не менее чем на 0.05°C.
   triggers:
-    - trigger: state
-      entity_id: sensor.livingroom_sensor_temperature
     - trigger: time_pattern
-      minutes: /5
+      seconds: /10
+
   variables:
     source_entity: sensor.livingroom_sensor_temperature
     target_entity: number.boiler_t_indoor
+
   conditions:
     - condition: template
       value_template: >
         {{ states(source_entity) not in ['unavailable', 'unknown']
-           and states(target_entity) not in ['unavailable', 'unknown'] }}
-    - condition: state
-      entity_id: binary_sensor.gas_ping
-      state: 'on'
-  actions:
-    - if:
-        - condition: template
-          value_template: >
-            {{ (states(source_entity)|float(0) - states(target_entity)|float(0))
-               | abs | round(2) >= 0.05 }}
-      then:
-        - action: number.set_value
-          target:
-            entity_id: '{{ target_entity }}'
-          data:
-            value: '{{ states(source_entity)|float(0)|round(2) }}'
-  mode: single
+           and is_number(states(source_entity)) }}
 
-- id: report_outdoor_temp
-  alias: Report outdoor temp to SmartTherm controller
-  description: >
-    Передача уличной температуры в SmartTherm, с фолбэком на прогноз
-    погоды, если местный датчик недоступен.
-  triggers:
-    - trigger: state
-      entity_id: sensor.yard_sensor_temperature
-    - trigger: state
-      entity_id: weather.forecast_house_lenina
-    - trigger: time_pattern
-      minutes: /5
-  variables:
-    yard_temp: "{{ states('sensor.yard_sensor_temperature') }}"
-    weather_temp: "{{ state_attr('weather.forecast_house_lenina', 'temperature') }}"
-    use_weather: "{{ yard_temp in ['unavailable', 'unknown', None] }}"
-    source_value: >-
-      {% if not use_weather %}
-        {{ yard_temp | float(0) }}
-      {% else %}
-        {{ weather_temp | float(0) }}
-      {% endif %}
-    target_entity: number.boiler_t_outdoor
-  conditions:
-    - condition: template
-      value_template: >
-        {{ source_value != 0 and states(target_entity) not in ['unavailable', 'unknown'] }}
-    - condition: state
-      entity_id: binary_sensor.gas_ping
-      state: 'on'
   actions:
     - if:
         - condition: template
           value_template: >
-            {{ (source_value - states(target_entity)|float(0)) | abs | round(2) >= 0.05 }}
+            {{ (states(source_entity)|float(0) -
+                states(target_entity)|float(0))
+               | abs >= 0.05 }}
       then:
         - action: number.set_value
           target:
             entity_id: "{{ target_entity }}"
           data:
-            value: "{{ source_value | round(2) }}"
+            value: "{{ states(source_entity)|float(0)|round(2) }}"
+
+  mode: single
+
+- id: report_outdoor_temp
+  alias: Report outdoor temp to SmartTherm controller
+  description: >
+    Передача уличной температуры в SmartTherm.
+    Используется местный датчик, при его недоступности — температура
+    из прогноза погоды. Значение передаётся только при изменении
+    не менее чем на 0.05°C.
+  triggers:
+    - trigger: time_pattern
+      seconds: /30
+
+  variables:
+    source_entity: sensor.yard_sensor_temperature
+    weather_entity: weather.forecast_house_lenina
+    target_entity: number.boiler_t_outdoor
+
+  actions:
+    - variables:
+        source_value: >-
+          {% if is_number(states(source_entity)) %}
+            {{ states(source_entity) | float }}
+          {% elif is_number(state_attr(weather_entity, 'temperature')) %}
+            {{ state_attr(weather_entity, 'temperature') | float }}
+          {% else %}
+            {{ none }}
+          {% endif %}
+
+    - if:
+        - condition: template
+          value_template: >
+            {{ is_number(source_value)
+               and is_number(states(target_entity))
+               and (
+                 (source_value | float - states(target_entity) | float)
+                 | abs >= 0.05
+               ) }}
+      then:
+        - action: number.set_value
+          target:
+            entity_id: "{{ target_entity }}"
+          data:
+            value: "{{ source_value | float | round(2) }}"
+
   mode: single
 
 - id: yard_sensor_unavailable_alert
