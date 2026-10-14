@@ -105,6 +105,12 @@ input_number:
     min: 0
     max: 100
     step: 1
+  boiler_starts_current_cycle:
+    name: Такты горелки за текущий цикл
+    min: 0
+    max: 200
+    step: 1
+    icon: mdi:fire-circle
 
 timer:
   bedroom_presence_off_delay:

@@ -153,6 +153,9 @@
     Единая точка управления climate.boiler_kotel. Реагирует и на изменение
     состояния термостатов зон (мгновенно), и по таймеру раз в 5 минут
     (страховка от рассинхрона, например после потери MQTT).
+    При включении обнуляет счётчик тактов горелки за цикл. При выключении
+    (комната достигла цели и термостат больше не требует нагрева) дописывает
+    это число в уведомление.
   triggers:
     - trigger: state
       entity_id: climate.livingroom_thermostat
@@ -161,6 +164,7 @@
   variables:
     required_mode: "{{ states('sensor.gas_boiler_required_mode') }}"
     current_mode: "{{ states('climate.boiler_kotel') }}"
+    burner_cycles: "{{ states('input_number.boiler_starts_current_cycle') | int(0) }}"
   conditions:
     - condition: template
       value_template: >
@@ -169,6 +173,15 @@
     - condition: template
       value_template: "{{ required_mode != current_mode }}"
   actions:
+    - if:
+        - condition: template
+          value_template: "{{ required_mode == 'heat' }}"
+      then:
+        - action: input_number.set_value
+          target:
+            entity_id: input_number.boiler_starts_current_cycle
+          data:
+            value: 0
     - action: climate.set_hvac_mode
       target:
         entity_id: climate.boiler_kotel
@@ -179,6 +192,9 @@
         message: >
           🔥 Котёл {{ 'ВКЛЮЧЁН' if required_mode == 'heat' else 'ВЫКЛЮЧЕН' }}
           (было: {{ current_mode }})
+          {% if required_mode == 'off' %}
+          🔁 Тактов включения горелки: {{ burner_cycles }}
+          {% endif %}
           🌡 Гостиная: {{ states('sensor.livingroom_sensor_temperature') | float(0) | round(1) }}°C,
           цель: {{ state_attr('climate.livingroom_thermostat', 'temperature') }}°C
           🕒 {{ now().strftime('%H:%M %d.%m.%Y') }}
@@ -291,6 +307,10 @@
 
 - id: boiler_count_starts
   alias: Счётчик включений горелки
+  description: >
+    Подтверждённый старт горелки (5 секунд) увеличивает часовой счётчик.
+    Пока котёл в режиме heat, тот же старт увеличивает счётчик текущего
+    цикла — его обнуляет gas_boiler_sync при включении и читает при выключении.
   trigger:
     - platform: state
       entity_id: binary_sensor.boiler_gorelka
@@ -303,6 +323,14 @@
         entity_id: input_number.boiler_starts_last_hour
       data:
         value: '{{ states(''input_number.boiler_starts_last_hour'') | int + 1 }}'
+    - condition: state
+      entity_id: climate.boiler_kotel
+      state: heat
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.boiler_starts_current_cycle
+      data:
+        value: '{{ states(''input_number.boiler_starts_current_cycle'') | int(0) + 1 }}'
 
 - id: boiler_reset_hourly
   alias: Сброс счётчика горелки каждый час
@@ -320,25 +348,6 @@
         entity_id: input_number.boiler_starts_last_hour
       data:
         value: 0
-  mode: single
-
-- id: boiler_short_cycling_alert
-  alias: Слишком частое тактование горелки
-  description: >
-    Разовое уведомление, если горелка запустилась больше N раз за
-    текущий час — признак плохо настроенной гидравлики/кривой отопления
-    или последствие короткого цикла нагрева.
-  triggers:
-    - trigger: numeric_state
-      entity_id: input_number.boiler_starts_last_hour
-      above: 8
-  actions:
-    - action: notify.me
-      data:
-        message: >
-          ⚠️ Горелка запускалась уже {{ states('input_number.boiler_starts_last_hour') | int }}
-          раз(а) за этот час — многовато, возможно, стоит посмотреть
-          настройки гистерезиса термостата.
   mode: single
 
 - id: notify_boiler_error

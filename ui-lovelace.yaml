@@ -404,6 +404,8 @@ views:
               name: Режим котла
             - entity: binary_sensor.boiler_gorelka
               name: Горелка
+            - entity: input_number.boiler_starts_current_cycle
+              name: Такты горелки за текущий цикл
             - entity: binary_sensor.boiler_otoplenie
               name: Отопление вкл.
             - entity: switch.virtual_heating_relay
