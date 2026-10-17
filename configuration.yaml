@@ -1,6 +1,16 @@
 # Loads default set of integrations. Do not remove.
 default_config:
 
+# Потери и задержка ping контроллера котла нужны только живому
+# JSON-логу связи. В recorder их не кладём: RTT меняется каждый цикл,
+# а база и так большая. Сам ping и watchdog от этого не меняются.
+recorder:
+  exclude:
+    entities:
+      - sensor.gas_ping_packet_loss
+      - sensor.gas_ping_round_trip_time_average
+      - sensor.gas_ping_jitter
+
 # Load frontend themes from the themes folder
 frontend:
   themes: !include_dir_merge_named themes
@@ -22,6 +32,8 @@ camera:
 shell_command:
   record_domofon_video: !secret domofon_record_cmd
   delete_domofon_video: rm -f /config/www/domofon.mp4
+  trim_boiler_link_log: python3 /config/boiler_link_trim.py
+  boiler_link_append: "python3 /config/boiler_link_append.py {{ payload_b64 }}"
 
 rest_command:
   domofon_open_door:

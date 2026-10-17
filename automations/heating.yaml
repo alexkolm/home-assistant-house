@@ -3,6 +3,13 @@
 # термостатом гостиной. Полная цепочка: репортинг температур в
 # контроллер → расчёт требуемого режима → синхронизация с котлом →
 # watchdog связи → пресеты по расписанию сна → диагностика/алерты.
+# Сырой журнал котла — /config/boiler_link.jsonl (boiler_link_*).
+# В Telegram из него ничего не собирается: туда идут только реальные
+# ошибки контроллера и долгая потеря ping.
+# Термостат гостиной живёт в UI (generic_thermostat), не в этом файле.
+# Один вызов тепла не длиннее 12 минут. После остановки он ждёт новое
+# показание сенсора и не включается раньше чем через 5 минут.
+# Допуски 0.1/0 и сообщения о включении котла не менялись.
 # =====================================================================
 
 - id: gas_boiler_maxtemp_enforce_on_reconnect
@@ -52,9 +59,9 @@
         name: "Котёл"
         message: "Автоматизация ограничила температуру до 65°C"
         entity_id: climate.boiler_kotel
-    - service: notify.me
+    - service: shell_command.boiler_link_append
       data:
-        message: "Ограничиваем максимальную температуру котла автоматизацией"
+        payload_b64: "{% import 'boiler_link.jinja' as bl %}{{ bl.boiler_link_record('setpoint_cap', none, trigger.from_state.attributes.temperature | default(none), 65, 'climate.boiler_kotel') | base64_encode | replace('\\n', '') }}"
 
 - id: gas_boiler_watchdog
   alias: Watchdog для газового котла
@@ -352,18 +359,24 @@
 
 - id: notify_boiler_error
   alias: Уведомление об ошибке котла
+  description: >
+    В Telegram только текст ошибки, который прислал контроллер.
+    unavailable и unknown — это обрыв MQTT или старт HA, не неисправность
+    котла. Такие переходы пишутся в boiler_link.jsonl и сюда не попадают.
   trigger:
     - platform: state
       entity_id: sensor.boiler_oshibki
   condition:
     - condition: template
-      value_template: '{{ trigger.to_state.state != ''нет'' }}'
+      value_template: >
+        {{ trigger.to_state.state not in ['нет', 'unavailable', 'unknown', 'none', '']
+           and (trigger.from_state is none
+                or trigger.from_state.state != trigger.to_state.state) }}
   action:
     - service: notify.me
       data:
-        message: '⚠️ Обнаружена ошибка котла!
-          Сообщение: {{ states(''sensor.boiler_oshibki'') }}
-          '
+        message: >
+          ⚠️ Ошибка котла: {{ trigger.to_state.state }}
   mode: single
 
 - id: notify_boiler_error_cleared
@@ -374,7 +387,8 @@
       to: "нет"
   conditions:
     - condition: template
-      value_template: "{{ trigger.from_state.state not in ['нет', 'unavailable', 'unknown'] }}"
+      value_template: >
+        {{ trigger.from_state.state not in ['нет', 'unavailable', 'unknown', 'none', ''] }}
   actions:
     - action: notify.me
       data:
@@ -499,4 +513,228 @@
     - service: notify.me
       data:
         message: "🟢 Уличный датчик температуры снова на связи."
+  mode: single
+
+# ---------------------------------------------------------------------
+# Сырой журнал котла, /config/boiler_link.jsonl, одна JSON-строка
+# на событие. Связь, горелка, циклы heat/off, текст ошибки, потолок
+# уставки. Выжимку в Telegram из этого файла пока не собираем.
+# Поля собирает макрос boiler_link_record в custom_templates.
+# ---------------------------------------------------------------------
+
+- id: boiler_link_snapshot
+  alias: Диагностика связи котла — снимок
+  description: >
+    Фоновый снимок раз в 15 минут: ping, потери, RTT, MQTT-состояние
+    котла, память контроллера и контрольные хосты сети.
+  triggers:
+    - trigger: time_pattern
+      minutes: "/15"
+  actions:
+    - action: shell_command.boiler_link_append
+      data:
+        payload_b64: "{% import 'boiler_link.jinja' as bl %}{{ bl.boiler_link_record('snapshot') | base64_encode | replace('\\n', '') }}"
+  mode: single
+
+- id: boiler_link_boot
+  alias: Диагностика связи котла — старт HA
+  description: >
+    Отметка перезапуска Home Assistant, чтобы обрыв записи не путать
+    с обрывом контроллера. Пауза даёт ping-сенсорам снять первый цикл.
+  triggers:
+    - trigger: homeassistant
+      event: start
+  actions:
+    - delay:
+        seconds: 60
+    - action: shell_command.boiler_link_append
+      data:
+        payload_b64: "{% import 'boiler_link.jinja' as bl %}{{ bl.boiler_link_record('boot') | base64_encode | replace('\\n', '') }}"
+  mode: single
+
+- id: boiler_link_mqtt_down
+  alias: Диагностика связи котла — MQTT недоступен
+  description: >
+    MQTT-климат котла недоступен 15 секунд. Более короткие мигания
+    не пишем. Если вместе с ним недоступны и ping, и часы Awtrix,
+    это старт HA, а не контроллер.
+  triggers:
+    - trigger: state
+      entity_id: climate.boiler_kotel
+      to: unavailable
+      for: "00:00:15"
+  conditions:
+    - condition: template
+      value_template: >
+        {{ not (
+             states('binary_sensor.gas_ping') in ['unavailable', 'unknown']
+             and states('binary_sensor.192_168_0_185') in ['unavailable', 'unknown']
+           ) }}
+  actions:
+    - action: shell_command.boiler_link_append
+      data:
+        payload_b64: "{% import 'boiler_link.jinja' as bl %}{{ bl.boiler_link_record('mqtt_down', none, trigger.from_state.state, 'unavailable', 'climate.boiler_kotel') | base64_encode | replace('\\n', '') }}"
+  mode: queued
+  max: 20
+
+- id: boiler_link_mqtt_up
+  alias: Диагностика связи котла — MQTT восстановлен
+  description: >
+    Длительность берётся от момента ухода в unavailable, поэтому в строке
+    виден полный простой, а не только хвост после 15-секундного порога.
+  triggers:
+    - trigger: state
+      entity_id: climate.boiler_kotel
+      from: unavailable
+  conditions:
+    - condition: template
+      value_template: >
+        {{ trigger.to_state.state not in ['unavailable', 'unknown']
+           and (as_timestamp(now()) - as_timestamp(trigger.from_state.last_changed)) >= 15 }}
+  actions:
+    - action: shell_command.boiler_link_append
+      data:
+        payload_b64: "{% import 'boiler_link.jinja' as bl %}{{ bl.boiler_link_record('mqtt_up', (as_timestamp(now()) - as_timestamp(trigger.from_state.last_changed)) | round(1), trigger.from_state.state, trigger.to_state.state, 'climate.boiler_kotel') | base64_encode | replace('\\n', '') }}"
+  mode: queued
+  max: 20
+
+- id: boiler_link_ping
+  alias: Диагностика связи котла — ping
+  description: >
+    Края binary_sensor.gas_ping. gap_s на переходе в on — сколько
+    хост не отвечал. Переходы через unavailable (рестарт HA) не пишем.
+  triggers:
+    - trigger: state
+      entity_id: binary_sensor.gas_ping
+      from:
+        - "on"
+        - "off"
+      to:
+        - "on"
+        - "off"
+  actions:
+    - action: shell_command.boiler_link_append
+      data:
+        payload_b64: "{% import 'boiler_link.jinja' as bl %}{{ bl.boiler_link_record('ping', (as_timestamp(now()) - as_timestamp(trigger.from_state.last_changed)) | round(1), trigger.from_state.state, trigger.to_state.state, 'binary_sensor.gas_ping') | base64_encode | replace('\\n', '') }}"
+  mode: queued
+  max: 20
+
+- id: boiler_link_usb
+  alias: Диагностика связи котла — питание USB
+  description: >
+    Цикл switch.gas_usb. Так в файле видно, перезапускал ли watchdog
+    контроллер, без чтения журнала автоматизаций.
+  triggers:
+    - trigger: state
+      entity_id: switch.gas_usb
+      from:
+        - "on"
+        - "off"
+      to:
+        - "on"
+        - "off"
+  actions:
+    - action: shell_command.boiler_link_append
+      data:
+        payload_b64: "{% import 'boiler_link.jinja' as bl %}{{ bl.boiler_link_record('usb', (as_timestamp(now()) - as_timestamp(trigger.from_state.last_changed)) | round(1), trigger.from_state.state, trigger.to_state.state, 'switch.gas_usb') | base64_encode | replace('\\n', '') }}"
+  mode: queued
+  max: 10
+
+- id: boiler_link_peer
+  alias: Диагностика связи котла — контрольный хост
+  description: >
+    Часы Awtrix и панель — другие Wi-Fi клиенты, координатор Zigbee —
+    устройство в LAN. Если пропадает только котёл, а эти трое на связи,
+    причина на стороне контроллера или его радиолинка.
+  triggers:
+    - trigger: state
+      entity_id:
+        - binary_sensor.192_168_0_185
+        - binary_sensor.openhasp_panel
+        - binary_sensor.192_168_0_50
+      from:
+        - "on"
+        - "off"
+      to:
+        - "on"
+        - "off"
+  actions:
+    - action: shell_command.boiler_link_append
+      data:
+        payload_b64: "{% import 'boiler_link.jinja' as bl %}{{ bl.boiler_link_record('peer', (as_timestamp(now()) - as_timestamp(trigger.from_state.last_changed)) | round(1), trigger.from_state.state, trigger.to_state.state, trigger.entity_id) | base64_encode | replace('\\n', '') }}"
+  mode: queued
+  max: 20
+
+- id: boiler_link_burner
+  alias: Журнал котла — горелка
+  description: >
+    Края binary_sensor.boiler_gorelka. gap_s на выключении — сколько
+    горела. Переходы через unavailable не пишем.
+  triggers:
+    - trigger: state
+      entity_id: binary_sensor.boiler_gorelka
+      from:
+        - "on"
+        - "off"
+      to:
+        - "on"
+        - "off"
+  actions:
+    - action: shell_command.boiler_link_append
+      data:
+        payload_b64: "{% import 'boiler_link.jinja' as bl %}{{ bl.boiler_link_record('burner', (as_timestamp(now()) - as_timestamp(trigger.from_state.last_changed)) | round(1), trigger.from_state.state, trigger.to_state.state, 'binary_sensor.boiler_gorelka') | base64_encode | replace('\\n', '') }}"
+  mode: queued
+  max: 30
+
+- id: boiler_link_heat
+  alias: Журнал котла — цикл обогрева
+  description: >
+    Смена режима climate.boiler_kotel между heat и off. Это цикл,
+    который запросила автоматика, а не каждый такт горелки.
+  triggers:
+    - trigger: state
+      entity_id: climate.boiler_kotel
+      from:
+        - heat
+        - "off"
+      to:
+        - heat
+        - "off"
+  actions:
+    - action: shell_command.boiler_link_append
+      data:
+        payload_b64: "{% import 'boiler_link.jinja' as bl %}{{ bl.boiler_link_record('heat', (as_timestamp(now()) - as_timestamp(trigger.from_state.last_changed)) | round(1), trigger.from_state.state, trigger.to_state.state, 'climate.boiler_kotel') | base64_encode | replace('\\n', '') }}"
+  mode: queued
+  max: 20
+
+- id: boiler_link_error
+  alias: Журнал котла — текст ошибки
+  description: >
+    Любая смена sensor.boiler_oshibki, включая unavailable. В Telegram
+    из этой автоматизации ничего не уходит.
+  triggers:
+    - trigger: state
+      entity_id: sensor.boiler_oshibki
+  conditions:
+    - condition: template
+      value_template: >
+        {{ trigger.from_state is none
+           or trigger.from_state.state != trigger.to_state.state }}
+  actions:
+    - action: shell_command.boiler_link_append
+      data:
+        payload_b64: "{% import 'boiler_link.jinja' as bl %}{{ bl.boiler_link_record('error', none, trigger.from_state.state if trigger.from_state is not none else none, trigger.to_state.state, 'sensor.boiler_oshibki') | base64_encode | replace('\\n', '') }}"
+  mode: queued
+  max: 20
+
+- id: boiler_link_trim
+  alias: Диагностика связи котла — обрезка лога
+  description: >
+    Раз в сутки оставляет последние 8000 строк boiler_link.jsonl.
+    Этого хватает примерно на два месяца снимков.
+  triggers:
+    - trigger: time
+      at: "04:10:00"
+  actions:
+    - action: shell_command.trim_boiler_link_log
   mode: single

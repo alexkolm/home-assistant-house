@@ -10,6 +10,10 @@
 !/pages.jsonl
 !/custom_templates/
 !/custom_templates/weather_helpers.jinja
+!/custom_templates/boiler_link.jinja
+!/boiler_link_trim.py
+!/boiler_link_append.py
+!/check_haos_drift.py
 
 # ==================================================
 # Allow automation YAML files
@@ -26,6 +30,7 @@
 # Allow project documentation
 # ==================================================
 !README.md
+!AGENTS.md
 
 # ==================================================
 # Explicit exclusions

@@ -1,0 +1,35 @@
+{#-
+  Одна строка JSON для /config/boiler_link.jsonl.
+  event: snapshot, boot, mqtt_down, mqtt_up, ping, usb, peer.
+  gap_s: длительность предыдущего состояния или полного MQTT-простоя.
+  Потери и RTT берутся из уже идущего ping 192.168.0.212, отдельных
+  ICMP-проверок этот макрос не добавляет.
+-#}
+{%- macro boiler_link_record(event, gap_s=none, frm=none, to=none, subject=none) -%}
+{{- {
+  "v": 1,
+  "ts": now().isoformat(timespec="seconds"),
+  "event": event,
+  "subject": subject,
+  "gap_s": gap_s if gap_s is number else none,
+  "from": frm,
+  "to": to,
+  "ping": states("binary_sensor.gas_ping"),
+  "ping_loss_pct": states("sensor.gas_ping_packet_loss") | float(none),
+  "ping_rtt_ms": states("sensor.gas_ping_round_trip_time_average") | float(none),
+  "ping_jitter_ms": states("sensor.gas_ping_jitter") | float(none),
+  "climate": states("climate.boiler_kotel"),
+  "setpoint": state_attr("climate.boiler_kotel", "temperature") | float(none),
+  "flow_c": states("sensor.boiler_temperatura_teplonositelia") | float(none),
+  "error": states("sensor.boiler_oshibki"),
+  "opentherm": states("binary_sensor.boiler_opentherm"),
+  "burner": states("binary_sensor.boiler_gorelka"),
+  "free_ram": states("sensor.boiler_free_ram") | float(none),
+  "t_indoor": states("number.boiler_t_indoor") | float(none),
+  "t_outdoor": states("number.boiler_t_outdoor") | float(none),
+  "awtrix": states("binary_sensor.192_168_0_185"),
+  "zigbee": states("binary_sensor.192_168_0_50"),
+  "panel": states("binary_sensor.openhasp_panel"),
+  "usb": states("switch.gas_usb")
+} | to_json -}}
+{%- endmacro -%}
