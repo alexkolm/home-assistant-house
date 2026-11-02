@@ -52,6 +52,22 @@ views:
       title: Устройства в сети
 
     - type: entities
+      show_header_toggle: false
+      title: Часы Awtrix
+      entities:
+      - entity: input_number.awtrix_time_seconds
+        name: Часы, секунды
+      - entity: input_number.awtrix_temp_seconds
+        name: Температура, секунды
+      - entity: input_number.awtrix_hum_seconds
+        name: Влажность, секунды
+      - entity: input_number.awtrix_yard_seconds
+        name: Улица, секунды
+      - entity: script.awtrix_reboot
+        name: Перезагрузить часы один раз
+        icon: mdi:restart
+
+    - type: entities
       entities:
       - entity: device_tracker.alex
         name: Телефон хозяина

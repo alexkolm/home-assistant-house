@@ -240,6 +240,136 @@
           sequence:
             - service: rest_command.wled_preset_1
 
+# Штатные Temperature и Humidity выключаются ключами TEMP/HUM.
+# Прошивка применяет это только после перезагрузки часов.
+# До неё на матрице будут и старые кадры, и новые.
+# save: true пишем во flash только когда меняется раскладка, не на каждый градус.
+# pos 5, 6 и 7: на этой прошивке 1 и 2 ставят свои кадры перед часами.
+# Свой кадр не читает встроенный рисунок, только файл из /ICONS.
+# thermo и drop — точные пиксели icon_234 и icon_2075 из прошивки.
+# Капля сдвинута на ряд вниз, как это делает штатный экран влажности.
+# Номера LaMetric 234 и 2075 сейчас другие картинки, их не качать.
+# Улица остаётся со снежинкой 1983.
+# Улица — целое число. Нет показания — прошлый кадр не затираем нулём.
+# Этот кадр пишем во flash и при смене целого градуса: иначе он только в памяти
+# и пропадает, если часы выключить до следующей перезаписи раскладки.
+- id: awtrix_display_loop
+  alias: AWTRIX — длительность экранов
+  mode: queued
+  max: 5
+  trigger:
+    - platform: homeassistant
+      event: start
+      id: full
+    - platform: state
+      entity_id: input_number.awtrix_time_seconds
+      id: settings
+    - platform: state
+      entity_id:
+        - input_number.awtrix_temp_seconds
+        - input_number.awtrix_hum_seconds
+        - input_number.awtrix_yard_seconds
+      id: duration
+    - platform: state
+      entity_id:
+        - sensor.awtrix_1ed68c_temperature
+        - sensor.awtrix_1ed68c_humidity
+      id: reading
+    # Целое число, чтобы десятые доли уличного датчика не переписывали кадр.
+    - platform: template
+      id: reading
+      value_template: >
+        {% if is_number(states('sensor.yard_sensor_temperature')) %}
+          {{ states('sensor.yard_sensor_temperature') | float | round(0) | int }}
+        {% else %}
+          none
+        {% endif %}
+    - platform: state
+      entity_id: sensor.awtrix_1ed68c_ip_address
+      from:
+        - unavailable
+        - unknown
+      id: full
+  action:
+    - if:
+        - condition: trigger
+          id: full
+      then:
+        - delay:
+            seconds: 15
+    - condition: template
+      value_template: >
+        {% set bad = ['unknown', 'unavailable', 'none', ''] %}
+        {{ states('sensor.awtrix_1ed68c_temperature') not in bad
+           and states('sensor.awtrix_1ed68c_humidity') not in bad
+           and states('input_number.awtrix_time_seconds') not in bad
+           and states('input_number.awtrix_temp_seconds') not in bad
+           and states('input_number.awtrix_hum_seconds') not in bad
+           and states('input_number.awtrix_yard_seconds') not in bad }}
+    - variables:
+        save_app: "{{ trigger.id in ['full', 'settings', 'duration'] }}"
+        temp_text: "{{ states('sensor.awtrix_1ed68c_temperature') | float(0) | round(0) | int }}°"
+        hum_text: "{{ states('sensor.awtrix_1ed68c_humidity') | float(0) | round(0) | int }}%"
+    - if:
+        - condition: template
+          value_template: "{{ trigger.id in ['full', 'settings'] }}"
+      then:
+        - service: mqtt.publish
+          data:
+            topic: awtrix/settings
+            payload: >
+              {{ {
+                'ATIME': states('input_number.awtrix_time_seconds') | int(4),
+                'TEMP': false,
+                'HUM': false
+              } | to_json }}
+    - service: mqtt.publish
+      data:
+        topic: awtrix/custom/temp
+        payload: >
+          {{ {
+            'text': temp_text,
+            'icon': 'thermo',
+            'duration': states('input_number.awtrix_temp_seconds') | int(1),
+            'center': true,
+            'textCase': 2,
+            'lifetime': 0,
+            'save': save_app | bool,
+            'pos': 5
+          } | to_json }}
+    - service: mqtt.publish
+      data:
+        topic: awtrix/custom/hum
+        payload: >
+          {{ {
+            'text': hum_text,
+            'icon': 'drop',
+            'duration': states('input_number.awtrix_hum_seconds') | int(1),
+            'center': true,
+            'textCase': 2,
+            'lifetime': 0,
+            'save': save_app | bool,
+            'pos': 6
+          } | to_json }}
+    - if:
+        - condition: template
+          value_template: "{{ is_number(states('sensor.yard_sensor_temperature')) }}"
+      then:
+        - service: mqtt.publish
+          data:
+            topic: awtrix/custom/yard
+            payload: >
+              {{ {
+                'text': (states('sensor.yard_sensor_temperature') | float | round(0) | int) ~ '°',
+                'icon': '1983',
+                'duration': states('input_number.awtrix_yard_seconds') | int(1),
+                'center': true,
+                'textCase': 2,
+                'lifetime': 0,
+                'save': true,
+                'pos': 7
+              } | to_json }}
+
 - id: button_door_open
   alias: Домофон — открыть с кнопки (Zigbee)
   mode: single

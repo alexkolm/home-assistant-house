@@ -4,3 +4,14 @@ open_gate:
     - service: switch.turn_on
       target:
         entity_id: switch.domofon_door_relay_0
+
+# Один раз после того, как HA уже прислал настройки экранов.
+# Повторная перезагрузка часам не вредит, для раскладки она больше не нужна.
+awtrix_reboot:
+  alias: "Перезагрузить часы Awtrix"
+  mode: single
+  sequence:
+    - service: mqtt.publish
+      data:
+        topic: awtrix/reboot
+        payload: ""

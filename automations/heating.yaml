@@ -7,9 +7,12 @@
 # В Telegram из него ничего не собирается: туда идут только реальные
 # ошибки контроллера и долгая потеря ping.
 # Термостат гостиной живёт в UI (generic_thermostat), не в этом файле.
-# Один вызов тепла не длиннее 12 минут. После остановки он ждёт новое
-# показание сенсора и не включается раньше чем через 5 минут.
-# Допуски 0.1/0 и сообщения о включении котла не менялись.
+# Потолок длины топки в нём снят. Пока цель выше комнаты больше чем на
+# 1,2 °C, вызов не режется: это выход из сна и из режима «уехали».
+# Когда дельта становится 1,2 °C или меньше, livingroom_heat_cycle_cap
+# выключает реле через 12 минут. Дальше термостат ждёт новое показание
+# и не включается раньше чем через 5 минут. Допуски 0.1/0.
+# Сообщения о включении котла не менялись.
 # =====================================================================
 
 - id: gas_boiler_maxtemp_enforce_on_reconnect
@@ -251,6 +254,141 @@
               🕒 {{ now().strftime('%H:%M %d.%m.%Y') }}
   mode: single
 
+- id: livingroom_heat_cycle_cap
+  alias: Гостиная — предел топки у цели
+  description: >
+    Термостат длину топки не ограничивает. Пока цель выше текущей больше
+    чем на 1,2 °C, таймер не ставится и вызов идёт до показания датчика.
+    На включении реле или на первом показании, где дельта уже 1,2 °C или
+    меньше, стартует timer.livingroom_heat_cycle_cap. Если температуру
+    прочитать нельзя, предел ставится сразу, без длинного вызова вслепую.
+  triggers:
+    - trigger: state
+      id: relay_on
+      entity_id: switch.virtual_heating_relay
+      to: "on"
+    - trigger: state
+      id: relay_off
+      entity_id: switch.virtual_heating_relay
+      to: "off"
+    - trigger: state
+      id: sensor
+      entity_id: sensor.livingroom_sensor_temperature
+      not_to:
+        - unknown
+        - unavailable
+  actions:
+    - choose:
+        - conditions:
+            - condition: trigger
+              id: relay_off
+            - condition: state
+              entity_id: timer.livingroom_heat_cycle_cap
+              state: active
+          sequence:
+            - action: timer.cancel
+              target:
+                entity_id: timer.livingroom_heat_cycle_cap
+        - conditions:
+            - condition: trigger
+              id: relay_on
+            - condition: template
+              value_template: >
+                {% set target = state_attr('climate.livingroom_thermostat', 'temperature') | float(none) %}
+                {% set current = states('sensor.livingroom_sensor_temperature') | float(none) %}
+                {{ target is not none and current is not none and (target - current) > 1.2 }}
+          sequence:
+            - if:
+                - condition: state
+                  entity_id: timer.livingroom_heat_cycle_cap
+                  state: active
+              then:
+                - action: timer.cancel
+                  target:
+                    entity_id: timer.livingroom_heat_cycle_cap
+            - action: logbook.log
+              data:
+                name: "Котёл"
+                entity_id: switch.virtual_heating_relay
+                message: >
+                  Топка без предела: цель {{ state_attr('climate.livingroom_thermostat', 'temperature') }}°C,
+                  сейчас {{ states('sensor.livingroom_sensor_temperature') }}°C
+        - conditions:
+            - condition: trigger
+              id: relay_on
+          sequence:
+            - action: timer.start
+              target:
+                entity_id: timer.livingroom_heat_cycle_cap
+            - action: logbook.log
+              data:
+                name: "Котёл"
+                entity_id: switch.virtual_heating_relay
+                message: >
+                  Предел топки 12 минут: цель {{ state_attr('climate.livingroom_thermostat', 'temperature') }}°C,
+                  сейчас {{ states('sensor.livingroom_sensor_temperature') }}°C
+        - conditions:
+            - condition: trigger
+              id: sensor
+            - condition: template
+              value_template: >
+                {{ trigger.from_state is not none
+                   and trigger.from_state.state != trigger.to_state.state }}
+            - condition: state
+              entity_id: switch.virtual_heating_relay
+              state: "on"
+            - condition: state
+              entity_id: timer.livingroom_heat_cycle_cap
+              state: idle
+            - condition: template
+              value_template: >
+                {% set target = state_attr('climate.livingroom_thermostat', 'temperature') | float(none) %}
+                {% set current = states('sensor.livingroom_sensor_temperature') | float(none) %}
+                {{ target is none or current is none or (target - current) <= 1.2 }}
+          sequence:
+            - action: timer.start
+              target:
+                entity_id: timer.livingroom_heat_cycle_cap
+            - action: logbook.log
+              data:
+                name: "Котёл"
+                entity_id: switch.virtual_heating_relay
+                message: >
+                  Дельта стала не больше 1,2°C, с этой секунды предел 12 минут:
+                  цель {{ state_attr('climate.livingroom_thermostat', 'temperature') }}°C,
+                  сейчас {{ states('sensor.livingroom_sensor_temperature') }}°C
+  mode: queued
+  max: 10
+
+- id: livingroom_heat_cycle_cap_fire
+  alias: Гостиная — отсечка топки по таймеру
+  description: >
+    Двенадцать минут у цели истекли. Выключается виртуальное реле,
+    не котёл: синхронизатор сам переводит climate.boiler_kotel в off.
+    Термостат видит внешнее выключение и не включает тепло раньше
+    паузы 5 минут и нового показания.
+  triggers:
+    - trigger: event
+      event_type: timer.finished
+      event_data:
+        entity_id: timer.livingroom_heat_cycle_cap
+  conditions:
+    - condition: state
+      entity_id: switch.virtual_heating_relay
+      state: "on"
+  actions:
+    - action: switch.turn_off
+      target:
+        entity_id: switch.virtual_heating_relay
+    - action: logbook.log
+      data:
+        name: "Котёл"
+        entity_id: switch.virtual_heating_relay
+        message: >
+          Отсечка топки: 12 минут у цели,
+          сейчас {{ states('sensor.livingroom_sensor_temperature') }}°C
+  mode: single
+
 - id: away_reminder
   alias: Напоминание — не забыли включить режим "уехали"
   description: >
@@ -437,8 +575,11 @@
   description: >
     Передача уличной температуры в SmartTherm.
     Используется местный датчик, при его недоступности — температура
-    из прогноза погоды. Значение передаётся только при изменении
-    не менее чем на 0.05°C.
+    из прогноза погоды. Если в контроллере ещё нет числа (unknown),
+    значение отправляется сразу: иначе проверка is_number по цели
+    никогда не пропускает первую запись. Дальше — только при изменении
+    не менее чем на 0.05°C. Ноль на улице считается настоящей температурой,
+    поэтому неизвестную цель нельзя подменять float(0).
   triggers:
     - trigger: time_pattern
       seconds: /30
@@ -462,11 +603,9 @@
     - if:
         - condition: template
           value_template: >
-            {{ is_number(source_value)
-               and is_number(states(target_entity))
-               and (
-                 (source_value | float - states(target_entity) | float)
-                 | abs >= 0.05
+            {{ is_number(source_value) and (
+                 not is_number(states(target_entity))
+                 or (source_value | float - states(target_entity) | float) | abs >= 0.05
                ) }}
       then:
         - action: number.set_value

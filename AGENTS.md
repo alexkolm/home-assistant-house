@@ -47,7 +47,7 @@
 Цепочка в `automations/heating.yaml`:
 
 1. Комнатная температура (`sensor.livingroom_sensor_temperature`) уходит в `number.boiler_t_indoor` каждые 10 с, только если изменилась ≥ 0.05 °C.
-2. Уличная (`sensor.yard_sensor_temperature`, запасной источник — погода) уходит в `number.boiler_t_outdoor` каждые 30 с, тот же порог.
+2. Уличная (`sensor.yard_sensor_temperature`, запасной источник — погода) уходит в `number.boiler_t_outdoor` каждые 30 с. Если там ещё нет числа, значение пишется сразу; дальше — только при изменении ≥ 0.05 °C. Неизвестную цель не подменять `float(0)`: 0 °C на улице — настоящая температура.
 3. `sensor.gas_boiler_required_mode` = `heat`, если `climate.livingroom_thermostat` в `heat` и `hvac_action: heating`, иначе `off`. Сейчас в списке зон только гостиная.
 4. `gas_boiler_sync` ставит `climate.boiler_kotel` в этот режим сразу и страхуется каждые 5 минут. При включении обнуляет счётчик тактов цикла, при выключении пишет его в Telegram.
 5. Потолок теплоносителя **65 °C**. Прошивка SmartTherm после старта ставит MaxTSet 80 °C, поэтому лимит заново выставляется при возврате `binary_sensor.gas_ping` и если атрибут `temperature` у котла ушёл выше 65.
