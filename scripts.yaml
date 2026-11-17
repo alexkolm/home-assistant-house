@@ -104,7 +104,9 @@ send_domofon_media:
           - if:
               - condition: template
                 value_template: >
-                  {{ photo_left.stdout | default('') != 'yes'
+                  {{ photo_left.returncode | default(1) | int(1) == 0
+                     and video_left.returncode | default(1) | int(1) == 0
+                     and photo_left.stdout | default('') != 'yes'
                      and video_left.stdout | default('') != 'yes' }}
             then:
               - stop: "Клип домофона отправлен"

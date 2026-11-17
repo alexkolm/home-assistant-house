@@ -42,8 +42,11 @@ shell_command:
   # чтобы следующая запись не смешалась с клипом, который ещё уходит в Telegram.
   save_domofon_clip: >-
     sh -c 'cp -f /config/www/domofon.jpg "$1" || true; if [ -s /config/www/domofon.mp4 ]; then cp -f /config/www/domofon.mp4 "$2" && rm -f /config/www/domofon.mp4; fi' sh "{{ photo }}" "{{ video }}"
-  # Всегда код 0: в stdout yes или no. Так проверка файла не выглядит как ошибка команды.
-  domofon_file_ready: 'test -s "{{ path }}" && echo yes || echo no'
+  # Через sh -c: у команды есть шаблон, и Home Assistant тогда не запускает оболочку.
+  # Без sh -c символы && достаются самой test, она выходит с кодом 2, и скрипт
+  # решает, что файла нет. stdout yes/no, код возврата всегда 0.
+  domofon_file_ready: >-
+    sh -c 'test -s "$1" && echo yes || echo no' sh "{{ path }}"
   delete_domofon_file: 'rm -f "{{ path }}"'
   # Самый старый неотправленный кадр и парный ролик. Пустой stdout — очереди нет.
   next_domofon_clip: >-
