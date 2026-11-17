@@ -7,12 +7,15 @@
 # В Telegram из него ничего не собирается: туда идут только реальные
 # ошибки контроллера и долгая потеря ping.
 # Термостат гостиной живёт в UI (generic_thermostat), не в этом файле.
+# Его датчик — sensor.heating_control_temperature, не сырая гостиная.
+# heating_sensor_fallback переключает источник: гостиная, пока любой её
+# канал менялся за 90 минут, иначе спальня, иначе unavailable и реле снято.
 # Потолок длины топки в нём снят. Пока цель выше комнаты больше чем на
-# 1,2 °C, вызов не режется: это выход из сна и из режима «уехали».
-# Когда дельта становится 1,2 °C или меньше, livingroom_heat_cycle_cap
-# выключает реле через 12 минут. Дальше термостат ждёт новое показание
+# input_number.livingroom_overheat_delta, вызов не режется: это выход из сна
+# и из режима «уехали». Когда дельта становится не больше этой настройки,
+# livingroom_heat_cycle_cap выключает реле через 12 минут. Дальше термостат ждёт новое показание
 # и не включается раньше чем через 5 минут. Допуски 0.1/0.
-# Сообщения о включении котла не менялись.
+# В Telegram смена heat/off не пишется: циклы топки слишком частые.
 # =====================================================================
 
 - id: gas_boiler_maxtemp_enforce_on_reconnect
@@ -89,7 +92,9 @@
               data:
                 name: "Watchdog котла"
                 message: "Рестарт пропущен: похоже, недоступна вся сеть, а не контроллер"
-            - service: notify.me
+            - service: notify.send_message
+              target:
+                entity_id: !secret telegram_notify_entity
               data:
                 message: >
                   ⚠️ Связь с котлом (SmartTherm, 192.168.0.212) потеряна,
@@ -119,13 +124,17 @@
                     entity_id: binary_sensor.gas_ping
                     state: 'on'
                 then:
-                  - service: notify.me
+                  - service: notify.send_message
+                    target:
+                      entity_id: !secret telegram_notify_entity
                     data:
                       message: >
                         ✅ Контроллер газового котла снова на связи после
                         перезапуска (попытка {{ repeat.index }} из 3).
                   - stop: "Связь восстановлена, дальнейшие попытки не нужны"
-        - service: notify.me
+        - service: notify.send_message
+          target:
+            entity_id: !secret telegram_notify_entity
           data:
             message: >
               🔴 3 попытки перезапустить контроллер газового котла
@@ -150,7 +159,9 @@
       value_template: >
         {{ (as_timestamp(now()) - as_timestamp(trigger.from_state.last_changed)) > 300 }}
   action:
-    - service: notify.me
+    - service: notify.send_message
+      target:
+        entity_id: !secret telegram_notify_entity
       data:
         message: >
           🟢 Связь с контроллером газового котла восстановлена.
@@ -163,9 +174,8 @@
     Единая точка управления climate.boiler_kotel. Реагирует и на изменение
     состояния термостатов зон (мгновенно), и по таймеру раз в 5 минут
     (страховка от рассинхрона, например после потери MQTT).
-    При включении обнуляет счётчик тактов горелки за цикл. При выключении
-    (комната достигла цели и термостат больше не требует нагрева) дописывает
-    это число в уведомление.
+    При включении обнуляет счётчик тактов горелки за цикл. В Telegram
+    включение и выключение не пишет.
   triggers:
     - trigger: state
       entity_id: climate.livingroom_thermostat
@@ -174,7 +184,6 @@
   variables:
     required_mode: "{{ states('sensor.gas_boiler_required_mode') }}"
     current_mode: "{{ states('climate.boiler_kotel') }}"
-    burner_cycles: "{{ states('input_number.boiler_starts_current_cycle') | int(0) }}"
   conditions:
     - condition: template
       value_template: >
@@ -197,17 +206,6 @@
         entity_id: climate.boiler_kotel
       data:
         hvac_mode: "{{ required_mode }}"
-    - action: notify.me
-      data:
-        message: >
-          🔥 Котёл {{ 'ВКЛЮЧЁН' if required_mode == 'heat' else 'ВЫКЛЮЧЕН' }}
-          (было: {{ current_mode }})
-          {% if required_mode == 'off' %}
-          🔁 Тактов включения горелки: {{ burner_cycles }}
-          {% endif %}
-          🌡 Гостиная: {{ states('sensor.livingroom_sensor_temperature') | float(0) | round(1) }}°C,
-          цель: {{ state_attr('climate.livingroom_thermostat', 'temperature') }}°C
-          🕒 {{ now().strftime('%H:%M %d.%m.%Y') }}
   mode: single
 
 - id: livingroom_preset_by_schedule
@@ -245,23 +243,202 @@
             entity_id: climate.livingroom_thermostat
           data:
             preset_mode: "{{ desired_preset }}"
-        - action: notify.me
+        - action: notify.send_message
+          target:
+            entity_id: !secret telegram_notify_entity
           data:
             message: >
               🔄 Режим термостата автоматически изменён:
               {{ 'Комфорт' if desired_preset == 'comfort' else 'Сон' }}
-              🌡 Температура гостиной: {{ states('sensor.livingroom_sensor_temperature') | float(0) | round(1) }}°C
+              🌡 Температура отопления: {% set t = states('sensor.heating_control_temperature') %}{{ (t | float | round(1) ~ '°C') if is_number(t) else 'нет датчика' }}
               🕒 {{ now().strftime('%H:%M %d.%m.%Y') }}
   mode: single
+
+- id: heating_sensor_fallback
+  alias: Отопление — живой датчик гостиной
+  description: >
+    Гостиная жива, если за 90 минут менялся любой её канал: температура,
+    влажность или давление. Сама температура при живом датчике молчит
+    дольше часа, поэтому по ней одной источник не меняем. Спальня —
+    запас на 3 часа: её живые паузы доходят почти до 2 часов. Возврат
+    на гостиную после двух пакетов с паузой от 15 минут. Один пакет
+    после обрыва источник не переключает. Если молчат оба,
+    sensor.heating_control_temperature становится unavailable и реле
+    отопления снимается. Термостат застывшее число сам не отпускает,
+    а смена пресета может снова включить реле, поэтому снятие
+    повторяется, пока источника нет.
+  triggers:
+    - trigger: time_pattern
+      minutes: "/1"
+    - trigger: homeassistant
+      event: start
+    - trigger: state
+      entity_id:
+        - sensor.livingroom_sensor_temperature
+        - sensor.livingroom_sensor_humidity
+        - sensor.livingroom_sensor_pressure
+        - sensor.bedroom_sensor_temperature
+      not_to:
+        - unknown
+        - unavailable
+    - trigger: state
+      entity_id: switch.virtual_heating_relay
+      to: "on"
+  conditions:
+    - condition: template
+      value_template: >
+        {{ states('input_select.heating_temp_source') in ['livingroom', 'bedroom', 'none']
+           and states('sensor.livingroom_sensor_temperature') != 'unknown'
+           and states('sensor.bedroom_sensor_temperature') != 'unknown'
+           and states('input_text.heating_sensor_recover_since') not in ['unknown', 'unavailable'] }}
+  variables:
+    living_limit: "5400"
+    bedroom_limit: "10800"
+    recover_hold: "900"
+  actions:
+    - variables:
+        living_age: >
+          {% set ents = [
+            'sensor.livingroom_sensor_temperature',
+            'sensor.livingroom_sensor_humidity',
+            'sensor.livingroom_sensor_pressure'
+          ] %}
+          {% set ns = namespace(ages=[]) %}
+          {% for e in ents %}
+            {% if is_number(states(e)) %}
+              {% set ns.ages = ns.ages + [(now() - states[e].last_changed).total_seconds()] %}
+            {% endif %}
+          {% endfor %}
+          {% if is_number(states('sensor.livingroom_sensor_temperature')) and ns.ages %}
+            {{ ns.ages | min }}
+          {% else %}
+            999999
+          {% endif %}
+        living_newest: >
+          {% set ents = [
+            'sensor.livingroom_sensor_temperature',
+            'sensor.livingroom_sensor_humidity',
+            'sensor.livingroom_sensor_pressure'
+          ] %}
+          {% set ns = namespace(ts=none) %}
+          {% for e in ents %}
+            {% if is_number(states(e)) %}
+              {% set ts = states[e].last_changed %}
+              {% if ns.ts is none or ts > ns.ts %}
+                {% set ns.ts = ts %}
+              {% endif %}
+            {% endif %}
+          {% endfor %}
+          {{ ns.ts.isoformat() if ns.ts is not none else 'none' }}
+        bedroom_age: >
+          {% if is_number(states('sensor.bedroom_sensor_temperature')) %}
+            {{ (now() - states.sensor.bedroom_sensor_temperature.last_changed).total_seconds() }}
+          {% else %}
+            999999
+          {% endif %}
+        current: "{{ states('input_select.heating_temp_source') }}"
+        recover: "{{ states('input_text.heating_sensor_recover_since') }}"
+    - variables:
+        plan: >
+          {%- set fresh = (living_age | float(999999)) <= (living_limit | float(5400)) -%}
+          {%- set bed = (bedroom_age | float(999999)) <= (bedroom_limit | float(10800)) -%}
+          {%- set newest = living_newest | trim -%}
+          {%- set hold = recover_hold | float(900) -%}
+          {%- set ns = namespace(target=current, recover=recover) -%}
+          {%- if current == 'livingroom' -%}
+            {%- if fresh -%}
+              {%- set ns.target = 'livingroom' -%}
+              {%- set ns.recover = 'none' -%}
+            {%- elif bed -%}
+              {%- set ns.target = 'bedroom' -%}
+              {%- set ns.recover = 'none' -%}
+            {%- else -%}
+              {%- set ns.target = 'none' -%}
+              {%- set ns.recover = 'none' -%}
+            {%- endif -%}
+          {%- elif not fresh or newest == 'none' -%}
+            {%- set ns.recover = 'none' -%}
+            {%- set ns.target = 'bedroom' if bed else 'none' -%}
+          {%- elif recover in ['none', 'unknown', 'unavailable', ''] -%}
+            {%- set ns.recover = newest -%}
+            {%- set ns.target = 'bedroom' if bed else 'none' -%}
+          {%- else -%}
+            {%- set rec_dt = as_datetime(recover) -%}
+            {%- set new_dt = as_datetime(newest) -%}
+            {%- if rec_dt is not none and new_dt is not none
+                  and (new_dt - rec_dt).total_seconds() >= hold
+                  and is_number(states('sensor.livingroom_sensor_temperature')) -%}
+              {%- set ns.target = 'livingroom' -%}
+              {%- set ns.recover = 'none' -%}
+            {%- else -%}
+              {%- set ns.target = 'bedroom' if bed else 'none' -%}
+            {%- endif -%}
+          {%- endif -%}
+          {{- ns.target ~ '|' ~ ns.recover -}}
+    - variables:
+        plan_target: "{{ (plan | trim).split('|')[0] }}"
+        plan_recover: "{{ (plan | trim).split('|')[1] }}"
+    - if:
+        - condition: template
+          value_template: "{{ plan_recover != recover }}"
+      then:
+        - action: input_text.set_value
+          target:
+            entity_id: input_text.heating_sensor_recover_since
+          data:
+            value: "{{ plan_recover }}"
+    - if:
+        - condition: template
+          value_template: "{{ plan_target != current }}"
+      then:
+        - action: input_select.select_option
+          target:
+            entity_id: input_select.heating_temp_source
+          data:
+            option: "{{ plan_target }}"
+        - action: notify.send_message
+          continue_on_error: true
+          target:
+            entity_id: !secret telegram_notify_entity
+          data:
+            message: >
+              {% set room = states('sensor.livingroom_sensor_temperature') %}
+              {% set bed_temp = states('sensor.bedroom_sensor_temperature') %}
+              {% if plan_target == 'bedroom' %}
+              ⚠️ Датчик гостиной молчит больше 90 минут. Отопление перешло на спальню: {{ bed_temp | float | round(1) }}°C.
+              Гостиная застыла на {{ room }}°C.
+              {% elif plan_target == 'none' %}
+              ⚠️ Датчики гостиной и спальни молчат. Вызов отопления снят, пока не появится живое показание.
+              {% else %}
+              ✅ Датчик гостиной снова в работе: {{ room | float | round(1) }}°C. Отопление вернулось на гостиную.
+              {% endif %}
+    - if:
+        - condition: template
+          value_template: "{{ plan_target == 'none' }}"
+        - condition: state
+          entity_id: switch.virtual_heating_relay
+          state: "on"
+      then:
+        - action: switch.turn_off
+          target:
+            entity_id: switch.virtual_heating_relay
+  mode: queued
+  max: 10
 
 - id: livingroom_heat_cycle_cap
   alias: Гостиная — предел топки у цели
   description: >
-    Термостат длину топки не ограничивает. Пока цель выше текущей больше
-    чем на 1,2 °C, таймер не ставится и вызов идёт до показания датчика.
-    На включении реле или на первом показании, где дельта уже 1,2 °C или
-    меньше, стартует timer.livingroom_heat_cycle_cap. Если температуру
-    прочитать нельзя, предел ставится сразу, без длинного вызова вслепую.
+    Термостат длину топки не ограничивает. Порог берётся из
+    input_number.livingroom_overheat_delta (на карточке это
+    «Дельта защиты от перетопа»). Пока цель выше текущей больше
+    этого порога, таймер не ставится и вызов идёт до показания датчика.
+    На включении реле или на первом показании, где дельта уже не больше
+    порога, стартует timer.livingroom_heat_cycle_cap. Температуру берёт
+    из sensor.heating_control_temperature: гостиная, пока она жива, иначе
+    спальня. Если температуру или порог прочитать нельзя, предел ставится
+    сразу, без длинного вызова вслепую.
+  variables:
+    overheat_delta: "{{ states('input_number.livingroom_overheat_delta') | float(0.9) }}"
   triggers:
     - trigger: state
       id: relay_on
@@ -273,7 +450,7 @@
       to: "off"
     - trigger: state
       id: sensor
-      entity_id: sensor.livingroom_sensor_temperature
+      entity_id: sensor.heating_control_temperature
       not_to:
         - unknown
         - unavailable
@@ -295,8 +472,8 @@
             - condition: template
               value_template: >
                 {% set target = state_attr('climate.livingroom_thermostat', 'temperature') | float(none) %}
-                {% set current = states('sensor.livingroom_sensor_temperature') | float(none) %}
-                {{ target is not none and current is not none and (target - current) > 1.2 }}
+                {% set current = states('sensor.heating_control_temperature') | float(none) %}
+                {{ target is not none and current is not none and (target - current) > overheat_delta }}
           sequence:
             - if:
                 - condition: state
@@ -311,8 +488,8 @@
                 name: "Котёл"
                 entity_id: switch.virtual_heating_relay
                 message: >
-                  Топка без предела: цель {{ state_attr('climate.livingroom_thermostat', 'temperature') }}°C,
-                  сейчас {{ states('sensor.livingroom_sensor_temperature') }}°C
+                  Топка без предела (порог {{ overheat_delta | round(1) }}°C): цель {{ state_attr('climate.livingroom_thermostat', 'temperature') }}°C,
+                  сейчас {{ states('sensor.heating_control_temperature') }}°C
         - conditions:
             - condition: trigger
               id: relay_on
@@ -326,7 +503,7 @@
                 entity_id: switch.virtual_heating_relay
                 message: >
                   Предел топки 12 минут: цель {{ state_attr('climate.livingroom_thermostat', 'temperature') }}°C,
-                  сейчас {{ states('sensor.livingroom_sensor_temperature') }}°C
+                  сейчас {{ states('sensor.heating_control_temperature') }}°C
         - conditions:
             - condition: trigger
               id: sensor
@@ -343,8 +520,8 @@
             - condition: template
               value_template: >
                 {% set target = state_attr('climate.livingroom_thermostat', 'temperature') | float(none) %}
-                {% set current = states('sensor.livingroom_sensor_temperature') | float(none) %}
-                {{ target is none or current is none or (target - current) <= 1.2 }}
+                {% set current = states('sensor.heating_control_temperature') | float(none) %}
+                {{ target is none or current is none or (target - current) <= overheat_delta }}
           sequence:
             - action: timer.start
               target:
@@ -354,9 +531,9 @@
                 name: "Котёл"
                 entity_id: switch.virtual_heating_relay
                 message: >
-                  Дельта стала не больше 1,2°C, с этой секунды предел 12 минут:
+                  Дельта стала не больше {{ overheat_delta | round(1) }}°C, с этой секунды предел 12 минут:
                   цель {{ state_attr('climate.livingroom_thermostat', 'temperature') }}°C,
-                  сейчас {{ states('sensor.livingroom_sensor_temperature') }}°C
+                  сейчас {{ states('sensor.heating_control_temperature') }}°C
   mode: queued
   max: 10
 
@@ -386,7 +563,7 @@
         entity_id: switch.virtual_heating_relay
         message: >
           Отсечка топки: 12 минут у цели,
-          сейчас {{ states('sensor.livingroom_sensor_temperature') }}°C
+          сейчас {{ states('sensor.heating_control_temperature') }}°C
   mode: single
 
 - id: away_reminder
@@ -405,12 +582,14 @@
       value_template: >
         {{ state_attr('climate.livingroom_thermostat', 'preset_mode') != 'away' }}
   actions:
-    - action: notify.me
+    - action: notify.send_message
+      target:
+        entity_id: !secret telegram_notify_entity
       data:
         message: >
           🏠 Хозяев нет дома уже 4+ часа, а режим "away" не включён.
           Сейчас в термостате режим: {{ state_attr('climate.livingroom_thermostat', 'preset_mode') }}
-          🌡 Гостиная: {{ states('sensor.livingroom_sensor_temperature') | float(0) | round(1) }}°C
+          🌡 Отопление: {% set t = states('sensor.heating_control_temperature') %}{{ (t | float | round(1) ~ '°C') if is_number(t) else 'нет датчика' }}
           Если дома никого не осталось — включи /away вручную.
   mode: single
 
@@ -511,7 +690,9 @@
            and (trigger.from_state is none
                 or trigger.from_state.state != trigger.to_state.state) }}
   action:
-    - service: notify.me
+    - service: notify.send_message
+      target:
+        entity_id: !secret telegram_notify_entity
       data:
         message: >
           ⚠️ Ошибка котла: {{ trigger.to_state.state }}
@@ -528,7 +709,9 @@
       value_template: >
         {{ trigger.from_state.state not in ['нет', 'unavailable', 'unknown', 'none', ''] }}
   actions:
-    - action: notify.me
+    - action: notify.send_message
+      target:
+        entity_id: !secret telegram_notify_entity
       data:
         message: >
           ✅ Ошибка котла устранена (была: {{ trigger.from_state.state }}).
@@ -538,14 +721,15 @@
   alias: Report indoor temp to SmartTherm controller
   description: >
     Передача комнатной температуры в SmartTherm.
-    Проверка каждые 10 секунд, значение отправляется только
-    при изменении не менее чем на 0.05°C.
+    Берётся sensor.heating_control_temperature: при обрыве гостиной
+    туда уже подставлена спальня. Проверка каждые 10 секунд, значение
+    отправляется только при изменении не менее чем на 0.05°C.
   triggers:
     - trigger: time_pattern
       seconds: /10
 
   variables:
-    source_entity: sensor.livingroom_sensor_temperature
+    source_entity: sensor.heating_control_temperature
     target_entity: number.boiler_t_indoor
 
   conditions:
@@ -629,7 +813,9 @@
         - 'unknown'
       for: '00:10:00'
   actions:
-    - service: notify.me
+    - service: notify.send_message
+      target:
+        entity_id: !secret telegram_notify_entity
       data:
         message: >
           ⚠️ Уличный датчик температуры недоступен уже 10+ минут.
@@ -649,7 +835,9 @@
       value_template: >
         {{ (as_timestamp(now()) - as_timestamp(trigger.from_state.last_changed)) > 600 }}
   actions:
-    - service: notify.me
+    - service: notify.send_message
+      target:
+        entity_id: !secret telegram_notify_entity
       data:
         message: "🟢 Уличный датчик температуры снова на связи."
   mode: single

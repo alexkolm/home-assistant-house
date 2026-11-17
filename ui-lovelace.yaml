@@ -363,6 +363,10 @@ views:
           entities:
             - entity: climate.livingroom_thermostat
               name: Термостат гостиной
+            - entity: sensor.heating_control_temperature
+              name: Температура для отопления
+            - entity: input_select.heating_temp_source
+              name: Источник температуры
             - entity: input_boolean.climate_daily
               name: Режимы термостата по расписанию
             - entity: schedule.night_mode
@@ -371,6 +375,8 @@ views:
               name: Отопление
             - entity: climate.boiler_goriachaia_voda
               name: Горячая вода
+            - entity: input_number.livingroom_overheat_delta
+              name: Дельта защиты от перетопа
 
         # Диагностика — здоровье связи и самого контроллера
         - type: entities

@@ -38,6 +38,19 @@ camera:
 shell_command:
   record_domofon_video: !secret domofon_record_cmd
   delete_domofon_video: rm -f /config/www/domofon.mp4
+  # Копия со штампом. Исходный mp4 удаляется только после успешного копирования,
+  # чтобы следующая запись не смешалась с клипом, который ещё уходит в Telegram.
+  save_domofon_clip: >-
+    sh -c 'cp -f /config/www/domofon.jpg "$1" || true; if [ -s /config/www/domofon.mp4 ]; then cp -f /config/www/domofon.mp4 "$2" && rm -f /config/www/domofon.mp4; fi' sh "{{ photo }}" "{{ video }}"
+  # Всегда код 0: в stdout yes или no. Так проверка файла не выглядит как ошибка команды.
+  domofon_file_ready: 'test -s "{{ path }}" && echo yes || echo no'
+  delete_domofon_file: 'rm -f "{{ path }}"'
+  # Самый старый неотправленный кадр и парный ролик. Пустой stdout — очереди нет.
+  next_domofon_clip: >-
+    sh -c 'photo=$(ls -1 /config/www/domofon_[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]_[0-9][0-9][0-9][0-9][0-9][0-9].jpg 2>/dev/null | sort | head -1); [ -n "$photo" ] || exit 0; printf "%s\n%s" "$photo" "${photo%.jpg}.mp4"'
+  # Сутки без Telegram: клип уже не отправляем, чтобы www не копился.
+  prune_domofon_clips: >-
+    find /config/www -maxdepth 1 -type f \( -name 'domofon_[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]_[0-9][0-9][0-9][0-9][0-9][0-9].jpg' -o -name 'domofon_[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]_[0-9][0-9][0-9][0-9][0-9][0-9].mp4' \) -mmin +1440 -delete
   trim_boiler_link_log: python3 /config/boiler_link_trim.py
   boiler_link_append: "python3 /config/boiler_link_append.py {{ payload_b64 }}"
 
@@ -111,6 +124,25 @@ input_boolean:
     name: Присутствие в спальне
     icon: mdi:bed
 
+input_select:
+  heating_temp_source:
+    name: Источник температуры отопления
+    icon: mdi:thermometer-lines
+    options:
+      - livingroom
+      - bedroom
+      - none
+    initial: livingroom
+
+input_text:
+  heating_sensor_recover_since:
+    name: Гостиная — первый пакет после обрыва
+    icon: mdi:timer-sand
+    min: 0
+    max: 40
+    initial: "none"
+    mode: text
+
 input_number:
   boiler_starts_last_hour:
     name: Boiler starts last hour
@@ -169,16 +201,67 @@ input_number:
     mode: box
     icon: mdi:snowflake
 
+  # Пока до цели гостиной больше этого значения, livingroom_heat_cycle_cap
+  # не ставит 12-минутный предел. initial только при создании сущности.
+  livingroom_overheat_delta:
+    name: Дельта защиты от перетопа
+    min: 0.3
+    max: 2.5
+    step: 0.1
+    initial: 0.9
+    unit_of_measurement: "°C"
+    mode: box
+    icon: mdi:thermometer-alert
+
 timer:
   bedroom_presence_off_delay:
     duration: "00:15:00"
-  # 12 минут только когда до цели гостиной осталось не больше 1,2 °C.
-  # Пока холоднее, livingroom_heat_cycle_cap этот таймер не запускает.
+  # 12 минут только когда до цели гостиной осталось не больше
+  # input_number.livingroom_overheat_delta. Пока холоднее, таймер не запускается.
   livingroom_heat_cycle_cap:
     name: Предел топки гостиной у цели
     duration: "00:12:00"
 
 template:
+
+  # Считается по таймеру и по смене источника. Обычный шаблон тут не
+  # просыпается: зависший датчик больше не меняет состояние, и термостат
+  # так и остаётся на старом числе.
+  - triggers:
+      - trigger: state
+        entity_id:
+          - input_select.heating_temp_source
+          - sensor.livingroom_sensor_temperature
+          - sensor.bedroom_sensor_temperature
+      - trigger: homeassistant
+        event: start
+      - trigger: time_pattern
+        minutes: "/1"
+    sensor:
+      - unique_id: heating_control_temperature
+        default_entity_id: sensor.heating_control_temperature
+        name: Температура для отопления
+        device_class: temperature
+        unit_of_measurement: "°C"
+        state_class: measurement
+        availability: >
+          {% set source = states('input_select.heating_temp_source') %}
+          {% if source == 'bedroom' %}
+            {{ is_number(states('sensor.bedroom_sensor_temperature')) }}
+          {% elif source == 'livingroom' %}
+            {{ is_number(states('sensor.livingroom_sensor_temperature')) }}
+          {% else %}
+            false
+          {% endif %}
+        state: >
+          {% set source = states('input_select.heating_temp_source') %}
+          {% if source == 'bedroom' %}
+            {{ states('sensor.bedroom_sensor_temperature') }}
+          {% else %}
+            {{ states('sensor.livingroom_sensor_temperature') }}
+          {% endif %}
+        attributes:
+          source: "{{ states('input_select.heating_temp_source') }}"
 
   - switch:
       - name: domofon_door_rest
@@ -464,10 +547,10 @@ tts:
   - platform: google_translate
 
 
-notify:
-  - name: me
-    platform: telegram
-    chat_id: !secret telegram_chat_id
+# Telegram: интеграция telegram_bot. Текст — notify.send_message,
+# фото и видео — telegram_bot.send_photo / send_video.
+# Цель — !secret telegram_notify_entity (групповой чат).
+# Платформа notify с platform: telegram удалена в HA 2026.11.
 
 
 lovelace:

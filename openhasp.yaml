@@ -153,11 +153,14 @@
       - obj: "p3b2"  # temperature гостиной
         properties:
           "text": >
-            {% set temp = states("sensor.livingroom_sensor_temperature") %}
-            {% if temp != "unavailable" and temp != "unknown" %}
+            {% set temp = states("sensor.heating_control_temperature") %}
+            {% set source = states("input_select.heating_temp_source") %}
+            {% if is_number(temp) and source == "bedroom" %}
+            Гостиная: {{ temp | float | round(1) }}°C (спальня)
+            {% elif is_number(temp) %}
             Гостиная: {{ temp | float | round(1) }}°C
             {% else %}
-            Гостиная: Н/Д
+            Гостиная: нет датчика
             {% endif %}
       - obj: "p3b3"  # temperature спальни
         properties:
@@ -216,7 +219,9 @@
                 entity_id: climate.livingroom_thermostat
               data:
                 preset_mode: "{{ preset }}"
-            - service: notify.me
+            - service: notify.send_message
+              target:
+                entity_id: !secret telegram_notify_entity
               data:
                 message: |
                   ✅ Режим термостата: {{ text }} ({{ preset }})
@@ -232,7 +237,9 @@
                 entity_id: climate.livingroom_thermostat
               data:
                 hvac_mode: "{{ 'heat' if val | int == 1 else 'off' }}"
-            - service: notify.me
+            - service: notify.send_message
+              target:
+                entity_id: !secret telegram_notify_entity
               data:
                 message: |
                   🔥 Отопление {{ 'включено' if val | int == 1 else 'выключено' }}

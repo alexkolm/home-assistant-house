@@ -466,8 +466,10 @@
         media_content_type: text
         extra:
           volume_level: 0.7
-    - service: notify.me
+    - service: notify.send_message
       continue_on_error: true
+      target:
+        entity_id: !secret telegram_notify_entity
       data:
         message: "Скрипт 'Уехали надолго' запущен"
     - service: switch.turn_off
@@ -499,6 +501,49 @@
                 entity_id: climate.livingroom_thermostat
               data:
                 preset_mode: "away"
+  mode: single
+
+- id: heat_before_return
+  alias: Команда /heat — прогреть дом к приезду
+  description: >
+    Обратная команда к /away, за пару часов до возвращения.
+    Сначала снимается «Уехали надолго» и включаются водонагреватель
+    и суточный график. Комфорт ставится после паузы: при включении
+    графика расписание сна может успеть записать свой пресет, и без
+    паузы оно затрёт комфорт. heat включается явно, иначе один пресет
+    дом не греет.
+  trigger:
+    - platform: event
+      event_type: telegram_command
+      event_data:
+        command: /heat
+  action:
+    - service: input_boolean.turn_off
+      target:
+        entity_id: input_boolean.notify_away_home
+    - service: switch.turn_on
+      target:
+        entity_id: switch.boiler_plug
+    - service: input_boolean.turn_on
+      target:
+        entity_id: input_boolean.climate_daily
+    - service: climate.set_hvac_mode
+      target:
+        entity_id: climate.livingroom_thermostat
+      data:
+        hvac_mode: heat
+    - delay: "00:00:02"
+    - service: climate.set_preset_mode
+      target:
+        entity_id: climate.livingroom_thermostat
+      data:
+        preset_mode: comfort
+    - service: notify.send_message
+      continue_on_error: true
+      target:
+        entity_id: !secret telegram_notify_entity
+      data:
+        message: "Скрипт 'Греем дом' запущен: комфорт, расписание, водонагреватель."
   mode: single
 
 - id: notify_offline_restore_after_48h
@@ -557,7 +602,9 @@
         - service: switch.turn_off
           target:
             entity_id: switch.livingroom_relay
-        - service: notify.me
+        - service: notify.send_message
+          target:
+            entity_id: !secret telegram_notify_entity
           data:
             message: |
               ⚠️ Реле в гостиной работало более 5 часов.
@@ -573,7 +620,9 @@
         - service: light.turn_off
           target:
             entity_id: light.torsher_lamp
-        - service: notify.me
+        - service: notify.send_message
+          target:
+            entity_id: !secret telegram_notify_entity
           data:
             message: |
               ⚠️ Торшер горел более 5 часов.
@@ -710,7 +759,9 @@
       entity_id: sensor.plant_sensor_soil_moisture
       below: 100
   action:
-    - service: notify.me
+    - service: notify.send_message
+      target:
+        entity_id: !secret telegram_notify_entity
       data:
         message: "Проверьте влажность почвы у цветов в доме\n \U0001F331 Влажность ниже
           100%.\n \n"
@@ -750,27 +801,61 @@
             - delay: "00:00:02"
             - service: rest_command.domofon_reject_call
               continue_on_error: true
-        - sequence:
-            - delay: "00:00:07"
-            - service: notify.me
-              continue_on_error: true
-              data:
-                message: ""
-                data:
-                  photo:
-                    - file: /config/www/domofon.jpg
-                      caption: "Калитка открыта. Фото 📸"
-            - delay: "00:00:02"
-            - service: notify.me
-              continue_on_error: true
-              data:
-                message: ""
-                data:
-                  video:
-                    - file: /config/www/domofon.mp4
-                      caption: "... и видео 🎥"
-            - service: shell_command.delete_domofon_video
-              continue_on_error: true
+    # Параллельная ветка дождалась конца записи. Дальше копия со штампом
+    # и отдельный скрипт: он повторяет отправку и не держит эту автоматизацию.
+    - variables:
+        stamp: "{{ now().strftime('%Y%m%d_%H%M%S') }}"
+        clip_photo: "/config/www/domofon_{{ stamp }}.jpg"
+        clip_video: "/config/www/domofon_{{ stamp }}.mp4"
+    - service: shell_command.save_domofon_clip
+      continue_on_error: true
+      data:
+        photo: "{{ clip_photo }}"
+        video: "{{ clip_video }}"
+    - service: script.turn_on
+      data:
+        entity_id: script.send_domofon_media
+        variables:
+          photo: "{{ clip_photo }}"
+          video: "{{ clip_video }}"
+          notify_on_fail: true
+
+- id: domofon_media_retry
+  alias: Домофон — дослать неотправленный клип
+  description: >
+    Подбирает кадр, который не ушёл с первой серии попыток или остался после
+    перезапуска HA. Пока скрипт уже отправляет, второй проход не запускается.
+  mode: single
+  trigger:
+    - platform: time_pattern
+      minutes: "/10"
+    - platform: homeassistant
+      event: start
+  condition:
+    - condition: state
+      entity_id: script.send_domofon_media
+      state: "off"
+  action:
+    - service: shell_command.prune_domofon_clips
+      continue_on_error: true
+    - service: shell_command.next_domofon_clip
+      continue_on_error: true
+      response_variable: pending
+    - variables:
+        lines: >-
+          {{ (pending.stdout | default('')).strip().split('\n') }}
+        photo: "{{ lines[0] | default('') | trim }}"
+        video: "{{ lines[1] | default('') | trim }}"
+    - condition: template
+      value_template: >
+        {{ photo is match('^/config/www/domofon_[0-9]{8}_[0-9]{6}\.jpg$') }}
+    - service: script.turn_on
+      data:
+        entity_id: script.send_domofon_media
+        variables:
+          photo: "{{ photo }}"
+          video: "{{ video }}"
+          notify_on_fail: false
 
 - id: total_info
   alias: Уведомление о потреблении ежесуточно
@@ -778,7 +863,9 @@
     - platform: time
       at: 00:01:00
   action:
-    - service: notify.me
+    - service: notify.send_message
+      target:
+        entity_id: !secret telegram_notify_entity
       data:
         message: "Потреблено за сутки в доме:  \n⚡ Энергия: {{ state_attr('sensor.daily_energy_main',
           'last_period') | float }} кВт⋅ч  \n\U0001F4A7 Вода: {{ state_attr('sensor.daily_water',
@@ -800,7 +887,9 @@
       entity_id: input_boolean.notify_offline
       state: 'on'
   action:
-    - service: notify.me
+    - service: notify.send_message
+      target:
+        entity_id: !secret telegram_notify_entity
       data:
         message: >
           {% set devices = {
@@ -818,18 +907,25 @@
     entity_id: group.family
     to: not_home
   action:
-    - service: notify.me
-      data:
-        message: 'ША: Все ушли, уведомления об открытии дверей включены'
+    # Устройства раньше Telegram: таймаут бота обрывает остальные шаги.
     - service: switch.turn_on
+      continue_on_error: true
       data:
         entity_id: switch.ipcam_plug
     - service: switch.turn_off
+      continue_on_error: true
       data:
         entity_id: switch.wled_plug
     - service: input_boolean.turn_on
+      continue_on_error: true
       target:
         entity_id: input_boolean.notify_door
+    - service: notify.send_message
+      continue_on_error: true
+      target:
+        entity_id: !secret telegram_notify_entity
+      data:
+        message: 'ША: Все ушли, уведомления об открытии дверей включены'
 
 - id: entering_home
   alias: Хозяин вернулся в дом
@@ -839,18 +935,59 @@
     from: not_home
     to: home
   action:
-    - service: notify.me
-      data:
-        message: 'ША: Кто-то из хозяев пришёл в дом, уведомления об открытии дверей отключены'
+    # Камера и флаг двери раньше Telegram. 14.11.2026 бот ответил
+    # Timed out через ~5 с, и switch.ipcam_plug остался включённым,
+    # хотя group.family уже был home.
     - service: switch.turn_off
+      continue_on_error: true
       data:
         entity_id: switch.ipcam_plug
     - service: switch.turn_on
+      continue_on_error: true
       data:
         entity_id: switch.wled_plug
     - service: input_boolean.turn_off
+      continue_on_error: true
       target:
         entity_id: input_boolean.notify_door
+    - service: notify.send_message
+      continue_on_error: true
+      target:
+        entity_id: !secret telegram_notify_entity
+      data:
+        message: 'ША: Кто-то из хозяев пришёл в дом, уведомления об открытии дверей отключены'
+
+- id: ipcam_off_while_home
+  alias: Камера кошки выключена, пока хозяева дома
+  description: >
+    Пока group.family = home, розетка камеры обязана быть выключена.
+    Приход ловит entering_home, но только переход not_home → home.
+    Если команда не дошла (Telegram оборвал сценарий, розетка была
+    unavailable, HA перезапустился уже с кем-то дома), эта проверка
+    дожимает выключение.
+  mode: single
+  trigger:
+    - platform: state
+      entity_id: group.family
+      to: home
+    - platform: state
+      entity_id: switch.ipcam_plug
+      to: "on"
+    - platform: homeassistant
+      event: start
+    - platform: time_pattern
+      minutes: "/5"
+  condition:
+    - condition: state
+      entity_id: group.family
+      state: home
+    - condition: state
+      entity_id: switch.ipcam_plug
+      state: "on"
+  action:
+    - service: switch.turn_off
+      target:
+        entity_id: switch.ipcam_plug
 
 - id: door_open
   alias: Оповещение об открытии дверей дома
@@ -871,7 +1008,9 @@
       \ парадной двери \U0001F513\n{% elif trigger.entity_id == 'binary_sensor.back_door_contact'
       %}\n  задней двери \U0001F513\n{% else %}\n  неизвестной двери\n{% endif %}"
   action:
-    - service: notify.me
+    - service: notify.send_message
+      target:
+        entity_id: !secret telegram_notify_entity
       data:
         message: 'ША: Открытие {{ door_name }}'
 
@@ -881,7 +1020,9 @@
     - platform: sun
       event: sunset
   action:
-    - service: notify.me
+    - service: notify.send_message
+      target:
+        entity_id: !secret telegram_notify_entity
       data:
         message: |
           ША: Солнце село 🌅
@@ -910,7 +1051,9 @@
     - service: switch.turn_on
       target:
         entity_id: switch.water_isolation_valve
-    - service: notify.me
+    - service: notify.send_message
+      target:
+        entity_id: !secret telegram_notify_entity
       data:
         message: "🚨 ПРОТЕЧКА в {{ leak_place }}! Вода перекрыта."
     - service: media_player.play_media
@@ -932,7 +1075,9 @@
   action:
     - variables:
         prev_page: "{{ states('number.plate1_page_number') | int(1) }}"
-    - service: notify.me
+    - service: notify.send_message
+      target:
+        entity_id: !secret telegram_notify_entity
       data:
         message: "📞 Вызов на домофоне"
     - service: media_player.play_media

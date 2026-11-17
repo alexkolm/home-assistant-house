@@ -15,3 +15,114 @@ awtrix_reboot:
       data:
         topic: awtrix/reboot
         payload: ""
+
+# Фото и видео домофона. Клиент Telegram обрывает загрузку примерно за 5 секунд,
+# поэтому одна попытка ненадёжна. Уже принятый файл удаляется и повторно не шлётся.
+# Очередь переживает следующий вызов: у каждого клипа свой путь.
+send_domofon_media:
+  alias: "Домофон — отправить клип в Telegram"
+  mode: queued
+  max: 5
+  fields:
+    photo:
+      description: "Путь к jpg этого вызова"
+      example: "/config/www/domofon_20261111_131445.jpg"
+    video:
+      description: "Путь к mp4 этого вызова"
+      example: "/config/www/domofon_20261111_131445.mp4"
+    notify_on_fail:
+      description: "Написать в чат, если за этот проход медиа так и не ушло"
+      example: true
+  sequence:
+    - condition: template
+      value_template: >
+        {{ photo is match('^/config/www/domofon_[0-9]{8}_[0-9]{6}\.jpg$')
+           and video is match('^/config/www/domofon_[0-9]{8}_[0-9]{6}\.mp4$') }}
+    - repeat:
+        count: 6
+        sequence:
+          - service: shell_command.domofon_file_ready
+            continue_on_error: true
+            response_variable: photo_stat
+            data:
+              path: "{{ photo }}"
+          - if:
+              - condition: template
+                value_template: "{{ photo_stat.stdout | default('') == 'yes' }}"
+            then:
+              - service: telegram_bot.send_photo
+                continue_on_error: true
+                response_variable: photo_sent
+                data:
+                  entity_id: !secret telegram_notify_entity
+                  file: "{{ photo }}"
+                  caption: "Калитка открыта. Фото 📸"
+              - if:
+                  - condition: template
+                    value_template: >
+                      {{ photo_sent is defined and photo_sent.chats | default([]) | count > 0 }}
+                then:
+                  - service: shell_command.delete_domofon_file
+                    continue_on_error: true
+                    data:
+                      path: "{{ photo }}"
+          - service: shell_command.domofon_file_ready
+            continue_on_error: true
+            response_variable: video_stat
+            data:
+              path: "{{ video }}"
+          - if:
+              - condition: template
+                value_template: "{{ video_stat.stdout | default('') == 'yes' }}"
+            then:
+              - service: telegram_bot.send_video
+                continue_on_error: true
+                response_variable: video_sent
+                data:
+                  entity_id: !secret telegram_notify_entity
+                  file: "{{ video }}"
+                  caption: "... и видео 🎥"
+              - if:
+                  - condition: template
+                    value_template: >
+                      {{ video_sent is defined and video_sent.chats | default([]) | count > 0 }}
+                then:
+                  - service: shell_command.delete_domofon_file
+                    continue_on_error: true
+                    data:
+                      path: "{{ video }}"
+          - service: shell_command.domofon_file_ready
+            continue_on_error: true
+            response_variable: photo_left
+            data:
+              path: "{{ photo }}"
+          - service: shell_command.domofon_file_ready
+            continue_on_error: true
+            response_variable: video_left
+            data:
+              path: "{{ video }}"
+          - if:
+              - condition: template
+                value_template: >
+                  {{ photo_left.stdout | default('') != 'yes'
+                     and video_left.stdout | default('') != 'yes' }}
+            then:
+              - stop: "Клип домофона отправлен"
+          - if:
+              - condition: template
+                value_template: "{{ repeat.index < 6 }}"
+            then:
+              - delay:
+                  seconds: "{{ [20, 40, 60, 120, 180][repeat.index - 1] }}"
+    - if:
+        - condition: template
+          value_template: "{{ notify_on_fail | default(false) }}"
+      then:
+        - service: notify.send_message
+          continue_on_error: true
+          target:
+            entity_id: !secret telegram_notify_entity
+          data:
+            message: >
+              Калитка открыта, но фото или видео пока не ушло в Telegram.
+              Отправлю ещё раз, когда Telegram снова ответит.
